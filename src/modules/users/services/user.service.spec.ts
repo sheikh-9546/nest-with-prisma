@@ -1,142 +1,164 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserService } from './user.service';
 import { PrismaService } from '@api/database/prisma.service';
+import { ConflictException } from '@nestjs/common';
 import { mockDeep, DeepMockProxy } from 'jest-mock-extended';
-import { Status } from '@prisma/client';
+import { Status } from '@api/enums/status.enum';
 import { UserValidationService } from './user.validation.service';
 import { EmailService } from '@api/modules/mailer/email.service';
 
 describe('UserService', () => {
   let userService: UserService;
-  let prismaServiceMock: DeepMockProxy<PrismaService>;
-  let userValidationServiceMock: DeepMockProxy<UserValidationService>;
-  let emailServiceMock: DeepMockProxy<EmailService>;
+  let prisma: DeepMockProxy<PrismaService>;
+  let userValidationService: DeepMockProxy<UserValidationService>;
+  let emailService: DeepMockProxy<EmailService>;
 
   beforeEach(async () => {
-    prismaServiceMock = mockDeep<PrismaService>();
-    userValidationServiceMock = mockDeep<UserValidationService>();
+    prisma = mockDeep<PrismaService>();
+    userValidationService = mockDeep<UserValidationService>();
+    emailService = mockDeep<EmailService>();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
         {
           provide: PrismaService,
-          useValue: prismaServiceMock, // Mocked PrismaService
+          useValue: prisma,
         },
         {
           provide: UserValidationService,
-          useValue: userValidationServiceMock, // Mocked UserValidationService
+          useValue: userValidationService,
         },
         {
           provide: EmailService,
-          useValue: emailServiceMock,
+          useValue: emailService, 
         },
       ],
     }).compile();
-
     userService = module.get<UserService>(UserService);
+    prisma = module.get(PrismaService);
+    userValidationService = module.get(UserValidationService); 
+    emailService = module.get(EmailService);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('createUser', () => {
-    it('should create a user successfully when all validations pass', async () => {
-      const mockUser = {
-        id: '1',
+  it('should create a new user successfully', async () => {
+    userValidationService.isRoleChecked.mockResolvedValue(true);
+    userValidationService.isEmailInUse.mockResolvedValue(false);
+    userValidationService.isPhoneInUse.mockResolvedValue(false);
+
+    prisma.user.create.mockResolvedValueOnce({
+      id: '1',
+      firstName: 'John',
+      lastName: 'Doe',
+      email: 'john@doe.com',
+      phoneNumber: '1234567890',
+      password: 'hashedPassword',
+      refreshToken: 'refreshTokenValue',
+      profilePic: 'https://example.com/profile-pic.jpg',
+      status: Status.ACTIVE, // or Status.ACTIVE
+      createdBy: 1,
+      updatedBy: 1,
+      deletedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    jest.spyOn(userService, 'createUserRole').mockResolvedValue(undefined);
+
+    const data = {
+      email: 'john@doe.com',
+      password: 'password123',
+      firstName: 'John',
+      lastName: 'Doe',
+      phoneNumber: '1234567890',
+      roleId: 1,
+    };
+
+    const result = await userService.createUser(data);
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        firstName: 'John',
+        lastName: 'Doe',
+        email: 'john@doe.com',
         full_name: 'John Doe',
-        firstName: 'John',
-        lastName: 'Doe',
-        email: 'john.doe@example.com',
-        phoneNumber: '1234567890',
-        password: 'hashedPassword',
-        roleId: 1,
-        refreshToken: null,
-        profilePic: null,
-        status: Status.INACTIVE,
-        createdBy: 1,
-        updatedBy: 1,
-        deletedAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+      }),
+    );
 
-      const createUserDto = {
-        email: 'john.doe@example.com',
-        password: 'password123',
-        firstName: 'John',
-        lastName: 'Doe',
-        phoneNumber: '1234567890',
-        roleId: 1,
-      };
-
-      // Mock validations to succeed
-      userValidationServiceMock.isEmailInUse.mockResolvedValue(false); // Email does not exist
-      userValidationServiceMock.isPhoneInUse.mockResolvedValue(false); // Phone number does not exist
-      userValidationServiceMock.isRoleChecked.mockResolvedValue(true); // Role is valid
-
-      // Mock Prisma create call
-      prismaServiceMock.user.create.mockResolvedValue(mockUser);
-
-      const result = await userService.createUser(createUserDto);
-
-      // Assertions
-      expect(result).toEqual(mockUser);
-      expect(userValidationServiceMock.isEmailInUse).toHaveBeenCalledWith(createUserDto.email);
-      expect(userValidationServiceMock.isPhoneInUse).toHaveBeenCalledWith(createUserDto.phoneNumber);
-      expect(userValidationServiceMock.isRoleChecked).toHaveBeenCalledWith(createUserDto.roleId);
-      expect(prismaServiceMock.user.create).toHaveBeenCalledWith({
-        data: createUserDto,
-      });
+    expect(userValidationService.isRoleChecked).toHaveBeenCalledWith(1);
+    expect(userValidationService.isEmailInUse).toHaveBeenCalledWith('john@doe.com');
+    expect(userValidationService.isPhoneInUse).toHaveBeenCalledWith('1234567890');
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        email: 'john@doe.com',
+        password: expect.any(String), // Password is hashed
+      }),
     });
-
-    it('should throw an error if the phone number already exists', async () => {
-      const createUserDto = {
-        email: 'john.doe@example.com',
-        password: 'password123',
-        firstName: 'John',
-        lastName: 'Doe',
-        phoneNumber: '1234567890',
-        roleId: 1,
-      };
-
-      // Mock phone number validation to fail
-      userValidationServiceMock.isEmailInUse.mockResolvedValue(false); // Email does not exist
-      userValidationServiceMock.isPhoneInUse.mockResolvedValue(true); // Phone number exists
-
-      await expect(userService.createUser(createUserDto)).rejects.toThrow(
-        'Phone number already exists',
-      );
-
-      expect(userValidationServiceMock.isEmailInUse).toHaveBeenCalledWith(createUserDto.email);
-      expect(userValidationServiceMock.isPhoneInUse).toHaveBeenCalledWith(createUserDto.phoneNumber);
-      expect(userValidationServiceMock.isRoleChecked).not.toHaveBeenCalled(); // Role validation should not be called
-      expect(prismaServiceMock.user.create).not.toHaveBeenCalled(); // User creation should not be attempted
-    });
-
-    it('should throw an error if the email already exists', async () => {
-      const createUserDto = {
-        email: 'john.doe@example.com',
-        password: 'password123',
-        firstName: 'John',
-        lastName: 'Doe',
-        phoneNumber: '1234567890',
-        roleId: 1,
-      };
-
-      // Mock email validation to fail
-      userValidationServiceMock.isEmailInUse.mockResolvedValue(true); // Email exists
-      userValidationServiceMock.isPhoneInUse.mockResolvedValue(false); // Phone number does not exist
-
-      await expect(userService.createUser(createUserDto)).rejects.toThrow(
-        'Email already exists',
-      );
-
-      expect(userValidationServiceMock.isEmailInUse).toHaveBeenCalledWith(createUserDto.email);
-      expect(userValidationServiceMock.isPhoneInUse).toHaveBeenCalledWith(createUserDto.phoneNumber);
-      expect(userValidationServiceMock.isRoleChecked).not.toHaveBeenCalled(); // Role validation should not be called
-      expect(prismaServiceMock.user.create).not.toHaveBeenCalled(); // User creation should not be attempted
-    });
+    expect(userService.createUserRole).toHaveBeenCalledWith('1', 1);
   });
+
+  it('should throw ConflictException if role is not found', async () => {
+    userValidationService.isRoleChecked.mockResolvedValue(false);
+
+    const data = {
+      email: 'john@doe.com',
+      password: 'password123',
+      firstName: 'John',
+      lastName: 'Doe',
+      phoneNumber: '1234567890',
+      roleId: 1,
+    };
+
+    await expect(userService.createUser(data)).rejects.toThrow(
+      ConflictException,
+    );
+
+    expect(userValidationService.isRoleChecked).toHaveBeenCalledWith(1);
+  });
+
+  it('should throw ConflictException if email is already in use', async () => {
+    userValidationService.isRoleChecked.mockResolvedValue(true);
+    userValidationService.isEmailInUse.mockResolvedValue(true);
+
+    const data = {
+      email: 'john@doe.com',
+      password: 'password123',
+      firstName: 'John',
+      lastName: 'Doe',
+      phoneNumber: '1234567890',
+      roleId: 1,
+    };
+
+    await expect(userService.createUser(data)).rejects.toThrow(
+      ConflictException,
+    );
+
+    expect(userValidationService.isEmailInUse).toHaveBeenCalledWith('john@doe.com');
+  });
+
+  it('should throw ConflictException if phone number is already in use', async () => {
+    userValidationService.isRoleChecked.mockResolvedValue(true);
+    userValidationService.isEmailInUse.mockResolvedValue(false);
+    userValidationService.isPhoneInUse.mockResolvedValue(true);
+
+    const data = {
+      email: 'john@doe.com',
+      password: 'password123',
+      firstName: 'John',
+      lastName: 'Doe',
+      phoneNumber: '1234567890',
+      roleId: 1,
+    };
+
+    await expect(userService.createUser(data)).rejects.toThrow(
+      ConflictException,
+    );
+
+    expect(userValidationService.isPhoneInUse).toHaveBeenCalledWith('1234567890');
+  });
+
 });
