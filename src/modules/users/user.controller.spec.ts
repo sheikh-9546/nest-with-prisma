@@ -3,6 +3,8 @@ import { UserController } from "./user.controller";
 import { UserService } from "@api/modules/users/services/user.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { DeepMockProxy, mockDeep } from "jest-mock-extended";
+import { Status } from "@api/enums/status.enum";
+import { UpdateUserDto } from "./dto/update-user.dto";
 
 describe("UserController", () => {
   let userController: UserController;
@@ -114,5 +116,149 @@ describe("UserController", () => {
     // Ensure the service method was called with the correct id
     expect(userServiceMock.getUserDetails).toHaveBeenCalledWith({ id: "999" });
     expect(userServiceMock.getUserDetails).toHaveBeenCalledTimes(1);
+  });
+
+  describe("getAllUsers", () => {
+    it("should call getAllUsers method of UserService and return paginated result", async () => {
+      const mockUsers = [
+        {
+          id: 1,
+          firstName: "John",
+          lastName: "Doe",
+          email: "john.doe@example.com",
+        },
+        {
+          id: 2,
+          firstName: "Jane",
+          lastName: "Doe",
+          email: "jane.doe@example.com",
+        },
+      ];
+      const expectedResponse = {
+        data: mockUsers,
+        totalCount: 2,
+        currentPage: 1,
+        totalPages: 1,
+        pageSize: 10,
+      };
+      userServiceMock.getAllUsers.mockResolvedValue(expectedResponse);
+      const paginationDto = {
+        page: 1,
+        limit: 10,
+        sort_column: "id",
+        sort_direction: "asc",
+      };
+      const result = await userController.getAllUsers(paginationDto);
+      expect(result).toEqual(expectedResponse);
+      expect(userServiceMock.getAllUsers).toHaveBeenCalledWith(
+        1,
+        10,
+        "id",
+        "asc"
+      );
+      expect(userServiceMock.getAllUsers).toHaveBeenCalledTimes(1);
+    });
+    it("should return empty data array when no users found", async () => {
+      const expectedResponse = {
+        data: [],
+        totalCount: 0,
+        currentPage: 1,
+        totalPages: 0,
+        pageSize: 10,
+      };
+      userServiceMock.getAllUsers.mockResolvedValue(expectedResponse);
+      const result = await userController.getAllUsers({
+        page: 1,
+        limit: 10,
+        sort_column: "id",
+        sort_direction: "asc",
+      });
+      expect(result).toEqual(expectedResponse);
+      expect(userServiceMock.getAllUsers).toHaveBeenCalledTimes(1);
+    });
+    it("should throw an error if UserService.getAllUsers fails", async () => {
+      userServiceMock.getAllUsers.mockRejectedValue(
+        new Error("Failed to fetch users")
+      );
+      await expect(
+        userController.getAllUsers({
+          page: 1,
+          limit: 10,
+          sort_column: "id",
+          sort_direction: "asc",
+        })
+      ).rejects.toThrow("Failed to fetch users");
+      expect(userServiceMock.getAllUsers).toHaveBeenCalledTimes(1);
+    });
+  });
+  describe("getUser", () => {
+    it("should return user details", async () => {
+      const mockUser = {
+        id: "1",
+        firstName: "John",
+        lastName: "Doe",
+        email: "john@example.com",
+        role: "admin",
+      };
+      userServiceMock.getUserDetails.mockResolvedValue(mockUser);
+      const result = await userController.getUser("1");
+      expect(result).toEqual(mockUser);
+      expect(userServiceMock.getUserDetails).toHaveBeenCalledWith({ id: "1" });
+    });
+    it("should throw error when user not found", async () => {
+      userServiceMock.getUserDetails.mockRejectedValue(
+        new Error("User not found")
+      );
+      await expect(userController.getUser("999")).rejects.toThrow(
+        "User not found"
+      );
+    });
+  });
+  describe("updateUser", () => {
+    it("should update user details", async () => {
+      const updateUserDto: UpdateUserDto = {
+        firstName: "John Updated",
+        lastName: "Doe Updated",
+        phoneNumber: "1234567890",
+        status: Status.ACTIVE,
+        updatedAt: new Date(),
+      };
+      const mockUpdatedUser = {
+        id: "1",
+        ...updateUserDto,
+        email: "john@example.com",
+      };
+      userServiceMock.updateUser.mockResolvedValue(mockUpdatedUser);
+      const result = await userController.updateUser("1", updateUserDto);
+      expect(result).toEqual(mockUpdatedUser);
+      expect(userServiceMock.updateUser).toHaveBeenCalledWith({
+        where: { id: "1" },
+        data: updateUserDto,
+      });
+    });
+  });
+  describe("deleteUser", () => {
+    it("should delete user", async () => {
+      const mockDeletedUser = {
+        id: "1",
+        firstName: "John",
+        lastName: "Doe",
+        email: "john@example.com",
+        phoneNumber: "1234567890",
+        password: "password123",
+        refreshToken: "token123",
+        profilePic: "profile.jpg",
+        status: Status.ACTIVE,
+        createdBy: 1,
+        updatedBy: 1,
+        deletedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      userServiceMock.deleteUser.mockResolvedValue(mockDeletedUser);
+      const result = await userController.deleteUser("1");
+      expect(result).toEqual(mockDeletedUser);
+      expect(userServiceMock.deleteUser).toHaveBeenCalledWith({ id: "1" });
+    });
   });
 });

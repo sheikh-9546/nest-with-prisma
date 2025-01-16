@@ -87,7 +87,7 @@ export class UserService {
   }
 
   // Method to check if an email is already in use
-  async findUserByEmail(email: string): Promise<User | null> {
+  async findUserByEmail(email: string): Promise<Pick<User,'id' | 'email'> | null> {
     return this.prisma.user.findUnique({
       where: { email },
     });
