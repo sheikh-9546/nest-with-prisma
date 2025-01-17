@@ -13,24 +13,28 @@ export function auditMiddleware(auditService: AuditService, prismaService: Prism
     if (['create', 'update', 'delete'].includes(action)) {
       let changes = {};
 
-      const userId = args?.data?.userId || 'system'; // Replace 'system' with actual authenticated userId
+      // userId will be number type
+      const userId: number = args?.data?.userId || 0; // 0 for system actions
       const modelId = args.where?.id || result.id;
 
       // Handle updates: find differences between old and new data
       if (action === 'update') {
-        // Use `prismaService` instead of `prisma`
         const before = await prismaService[model].findUnique({ where: args.where });
         const after = result;
         changes = diff(before, after);
       }
 
+      // Convert numbers to strings before passing to audit service
+      const userIdStr = userId.toString();
+      const modelIdStr = modelId.toString();
+
       // Log activity based on the action
       if (action === 'create') {
-        await auditService.logCreate(userId, model, modelId);
+        await auditService.logCreate(userIdStr, model, modelIdStr);
       } else if (action === 'update') {
-        await auditService.logUpdate(userId, model, modelId, changes);
+        await auditService.logUpdate(userIdStr, model, modelIdStr, changes);
       } else if (action === 'delete') {
-        await auditService.logDelete(userId, model, modelId);
+        await auditService.logDelete(userIdStr, model, modelIdStr);
       }
     }
 

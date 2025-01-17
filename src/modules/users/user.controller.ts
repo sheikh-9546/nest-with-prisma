@@ -23,10 +23,13 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { multerConfig } from '@api/core/common/multer.config';
 import { Express } from 'express';
 import { FileUploadDestination } from '@api/enums/file-upload-destination.enum';
+import { AuditInterceptor } from '@api/modules/audit/interceptors/audit.interceptor';
+import { Audit } from '@api/modules/audit/decorators/audit.decorator';
 
 @RestController({ path: 'users', tag: 'Users' })
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
+@UseInterceptors(AuditInterceptor)
 @Controller('user')
 export class UserController {
   constructor(private readonly userService: UserService) { }
@@ -43,11 +46,13 @@ export class UserController {
   }
 
   @PostMapping({ path: 'create-user', summary: 'Allow to create a user' })
+  @Audit({ action: 'CREATE', model: 'User' })
   async createUser(@Body() data: CreateUserDto): Promise<UserSerializer> {
     return this.userService.createUser(data);
   }
 
   @PatchMapping({ path: ':id', summary: 'Allow to update user details' })
+  @Audit({ action: 'UPDATE', model: 'User' })
   async updateUser(
     @Param('id') id: string,
     @Body() userData: UpdateUserDto,
@@ -56,26 +61,31 @@ export class UserController {
   }
 
   @PatchMapping({ path: ':id/status', summary: 'Allow to update user status' })
+  @Audit({ action: 'UPDATE_STATUS', model: 'User' })
   async updateUserStatus(@Param('id') id: string, @Body() updateUserStatusDto: UpdateUserStatusDto) {
     return this.userService.updateUserStatus(id, updateUserStatusDto.status);
   }
 
   @DeleteMapping({ path: ':id', summary: 'Delete a user' })
+  @Audit({ action: 'DELETE', model: 'User' })
   async deleteUser(@Param('id') id: string): Promise<User> {
     return this.userService.deleteUser({ id: id });
   }
 
   @PostMapping({ path: 'change-password', summary: 'Allow to change Password' })
+  @Audit({ action: 'CHANGE_PASSWORD', model: 'User' })
   async changePassword(@Req() req: Request, @Body() changePasswordDto: ChangePasswordDto) {
     const userId = req.user?.id;
     return this.userService.changePassword(userId, changePasswordDto.currentPassword, changePasswordDto.newPassword);
   }
 
-  @PostMapping({ path: 'upload-profile-image', summary: 'Allow to uplaod profile Image' })
+  @PostMapping({ path: 'upload-profile-image', summary: 'Allow to upload profile Image' })
   @UseInterceptors(FileInterceptor('file', multerConfig(FileUploadDestination.userProfile)))
+  @Audit({ action: 'UPDATE_PROFILE_IMAGE', model: 'User' })
   async uploadProfile(
     @UploadedFile() file: Express.Multer.File,
-    @Req() req: Request, @Body() uploadProfileDto: UploadProfileDto,
+    @Req() req: Request,
+    @Body() uploadProfileDto: UploadProfileDto,
   ) {
     const userId = req.user?.id;
     const filePath = `uploads/profiles/${file.filename}`;
