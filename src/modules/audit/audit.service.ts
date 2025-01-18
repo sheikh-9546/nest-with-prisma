@@ -48,6 +48,7 @@ export class AuditService {
   async getAuditLogs(filters: {
     userId?: string;
     model?: string;
+    modelId?: string;
     action?: string;
     fromDate?: Date;
     toDate?: Date;

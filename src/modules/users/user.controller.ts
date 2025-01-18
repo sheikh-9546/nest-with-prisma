@@ -25,6 +25,7 @@ import { Express } from 'express';
 import { FileUploadDestination } from '@api/enums/file-upload-destination.enum';
 import { AuditInterceptor } from '@api/modules/audit/interceptors/audit.interceptor';
 import { Audit } from '@api/modules/audit/decorators/audit.decorator';
+import { AuditChangesInterceptor } from '@api/modules/audit/interceptors/audit-changes.interceptor';
 
 @RestController({ path: 'users', tag: 'Users' })
 @ApiBearerAuth()
@@ -53,15 +54,17 @@ export class UserController {
 
   @PatchMapping({ path: ':id', summary: 'Allow to update user details' })
   @Audit({ action: 'UPDATE', model: 'User' })
+  @UseInterceptors(AuditChangesInterceptor)
   async updateUser(
     @Param('id') id: string,
     @Body() userData: UpdateUserDto,
   ): Promise<User> {
-    return this.userService.updateUser({ where: { id: id }, data: userData });
+    return this.userService.updateUser({ where: { id }, data: userData });
   }
 
   @PatchMapping({ path: ':id/status', summary: 'Allow to update user status' })
   @Audit({ action: 'UPDATE_STATUS', model: 'User' })
+  @UseInterceptors(AuditChangesInterceptor)
   async updateUserStatus(@Param('id') id: string, @Body() updateUserStatusDto: UpdateUserStatusDto) {
     return this.userService.updateUserStatus(id, updateUserStatusDto.status);
   }

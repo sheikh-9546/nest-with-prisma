@@ -1,21 +1,12 @@
-import { Module, Global } from '@nestjs/common';
-import { PrismaModule } from '@api/database/prisma.module';
-import { PrismaService } from '@api/database/prisma.service';
+import { Module } from '@nestjs/common';
+import { AuditController } from './audit.controller';
 import { AuditService } from './audit.service';
-import { AuditInterceptor } from './interceptors/audit.interceptor';
-import { EventEmitterModule } from '@nestjs/event-emitter';
+import { PrismaService } from '@api/database/prisma.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
-@Global()
 @Module({
-  imports: [
-    PrismaModule,
-    EventEmitterModule.forRoot(),
-  ],
-  providers: [
-    PrismaService,
-    AuditService,
-    AuditInterceptor,
-  ],
-  exports: [AuditService, AuditInterceptor],
+  controllers: [AuditController],
+  providers: [AuditService, PrismaService, EventEmitter2],
+  exports: [AuditService],
 })
 export class AuditModule {}

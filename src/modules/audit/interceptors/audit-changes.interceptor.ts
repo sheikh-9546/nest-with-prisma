@@ -1,19 +1,12 @@
-import {
-  Injectable,
-  NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-  NotFoundException,
-} from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { Observable } from 'rxjs';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, NotFoundException } from '@nestjs/common';
+import { Observable, lastValueFrom } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { AuditService } from '../audit.service';
-import { AUDIT_KEY, AuditMetadata } from '../decorators/audit.decorator';
 import { PrismaService } from '@api/database/prisma.service';
+import { Reflector } from '@nestjs/core';
 
 @Injectable()
-export class AuditInterceptor implements NestInterceptor {
+export class AuditChangesInterceptor implements NestInterceptor {
   constructor(
     private reflector: Reflector,
     private auditService: AuditService,
@@ -22,38 +15,38 @@ export class AuditInterceptor implements NestInterceptor {
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
     const request = context.switchToHttp().getRequest();
-    const auditMetadata = this.reflector.get<AuditMetadata>(AUDIT_KEY, context.getHandler());
+    const { params, user, method } = request;
+    
+    const auditConfig = this.reflector.get('audit', context.getHandler());
+    if (!auditConfig) return next.handle();
 
-    if (!auditMetadata) {
-      return next.handle();
-    }
+    const { model, action } = auditConfig;
+    const modelId = params.id;
 
-    const startTime = Date.now();
+    // Get current state if it's an update operation
     let oldData = null;
-
-    if (['PATCH', 'PUT', 'DELETE'].includes(request.method)) {
-      oldData = await this.getOldData(auditMetadata.model, request.params.id);
+    if (modelId && ['PATCH', 'PUT', 'DELETE'].includes(method)) {
+      oldData = await this.getModelData(model, modelId);
       if (!oldData) {
-        throw new NotFoundException(`${auditMetadata.model} not found`);
+        throw new NotFoundException(`${model} not found`);
       }
     }
 
+    // Handle the request and audit logging
     return next.handle().pipe(
       tap(async (data) => {
         if (!data) return;
-        
-        const duration = Date.now() - startTime;
+
         await this.auditService.log({
-          userId: request.user?.id,
-          action: auditMetadata.action,
-          model: auditMetadata.model,
-          modelId: data?.id || request.params.id,
-          duration,
+          userId: user?.id,
+          action,
+          model,
+          modelId: data?.id || modelId,
           oldData,
           newData: this.sanitizeData(data),
           metadata: {
             ip: request.ip,
-            method: request.method,
+            method,
             path: request.path,
             userAgent: request.get('user-agent'),
           }
@@ -62,7 +55,7 @@ export class AuditInterceptor implements NestInterceptor {
     );
   }
 
-  private async getOldData(model: string, id: string) {
+  private async getModelData(model: string, id: string) {
     const modelName = model.toLowerCase();
     if (!this.prisma[modelName]) return null;
     

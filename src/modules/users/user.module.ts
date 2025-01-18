@@ -9,12 +9,14 @@ import { RolesModule } from '../roles/roles.module';
 import { EmailService } from '../mailer/email.service';
 import { UserValidationService } from './services/user.validation.service';
 import { RolesService } from '../roles/services/role.service';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
     PrismaModule,
     RolesModule,
     forwardRef(() => UserModule),
+    AuditModule,
   ],
   controllers: [UserController],
   providers: [
