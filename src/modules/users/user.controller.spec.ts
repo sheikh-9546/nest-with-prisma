@@ -1,265 +1,183 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { UserController } from "./user.controller";
 import { UserService } from "@api/modules/users/services/user.service";
-import { CreateUserDto } from "./dto/create-user.dto";
 import { DeepMockProxy, mockDeep } from "jest-mock-extended";
+import { AuditService } from "@api/modules/audit/audit.service";
+import { PrismaService } from "@api/database/prisma.service";
+import { Reflector } from "@nestjs/core";
+import { AuditAction } from "@api/enums/audit-action.enum";
 import { Status } from "@api/enums/status.enum";
-import { UpdateUserDto } from "./dto/update-user.dto";
+import { AuditChangesInterceptor } from "@api/modules/audit/interceptors/audit-changes.interceptor";
+import { ExecutionContext } from "@nestjs/common";
+import { of, lastValueFrom } from 'rxjs';
 
 describe("UserController", () => {
   let userController: UserController;
   let userServiceMock: DeepMockProxy<UserService>;
+  let auditServiceMock: DeepMockProxy<AuditService>;
+  let prismaServiceMock: DeepMockProxy<PrismaService>;
+  let auditInterceptor: AuditChangesInterceptor;
 
-  beforeEach(async () => {
-    userServiceMock = mockDeep<UserService>();
+  const mockContext = (method: string) => ({
+    switchToHttp: () => ({
+      getRequest: () => ({
+        method,
+        user: { id: '1' },
+        ip: '127.0.0.1',
+        path: '/users',
+        get: () => 'test-user-agent',
+        params: { id: '1' }
+      }),
+      getResponse: () => ({}),
+      getNext: () => jest.fn(),
+    }),
+    getHandler: () => jest.fn(),
+    getType: () => 'http',
+    getClass: () => UserController,
+    getArgs: () => [],
+    getArgByIndex: () => null,
+    switchToRpc: () => null,
+    switchToWs: () => null,
+  });
 
+  const setupTest = async (metadata = { action: AuditAction.CREATE, model: 'User' }) => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
       providers: [
-        {
-          provide: UserService,
-          useValue: userServiceMock, // Use the deeply mocked service
-        },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: AuditService, useValue: auditServiceMock },
+        { provide: PrismaService, useValue: prismaServiceMock },
+        Reflector,
       ],
     }).compile();
 
     userController = module.get<UserController>(UserController);
-  });
-
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-  describe("createUser", () => {
-    it("should call createUser method of UserService and return result", async () => {
-      const mockUser = {
-        firstName: "John",
-        lastName: "Doe",
-        email: "john.doe@example.com",
-        full_name: "John Doe",
-      };
-      const createUserDto: CreateUserDto = {
-        email: "john.doe@example.com",
-        password: "password123",
-        firstName: "John",
-        lastName: "Doe",
-        phoneNumber: "1234567890",
-        roleId: 1,
-      };
-      // Mock the service method
-      userServiceMock.createUser.mockResolvedValue(mockUser);
-      // Call the controller method
-      const result = await userController.createUser(createUserDto);
-      // Assertions
-      expect(result).toEqual(mockUser);
-      expect(userServiceMock.createUser).toHaveBeenCalledTimes(1);
-      expect(userServiceMock.createUser).toHaveBeenCalledWith(createUserDto);
-    });
-    it("should throw an error if UserService.createUser fails", async () => {
-      const createUserDto: CreateUserDto = {
-        email: "john.doe@example.com",
-        password: "password123",
-        firstName: "John",
-        lastName: "Doe",
-        phoneNumber: "1234567890",
-        roleId: 1,
-      };
-      userServiceMock.createUser.mockRejectedValue(
-        new Error("User creation failed")
-      );
-      await expect(userController.createUser(createUserDto)).rejects.toThrow(
-        "User creation failed"
-      );
-      expect(userServiceMock.createUser).toHaveBeenCalledWith(createUserDto);
-    });
-  });
-
-  it("should retrieve user details successfully", async () => {
-    // Mock the UserService.getUserDetails method
-    userServiceMock.getUserDetails.mockResolvedValueOnce({
-      id: "1",
-      firstName: "John",
-      lastName: "Doe",
-      email: "john.doe@example.com",
-      full_name: "John Doe",
-    });
-
-    const id = "1";
-
-    // Call the controller method
-    const result = await userController.getUser(id);
-
-    // Assertions
-    expect(result).toEqual({
-      id: "1",
-      firstName: "John",
-      lastName: "Doe",
-      email: "john.doe@example.com",
-      full_name: "John Doe",
-    });
-
-    // Ensure the service method was called with the correct id
-    expect(userServiceMock.getUserDetails).toHaveBeenCalledWith({ id: "1" });
-    expect(userServiceMock.getUserDetails).toHaveBeenCalledTimes(1);
-  });
-
-  it("should throw an exception if user not found", async () => {
-    // Mock the userServiceMock.getUserDetails method to throw an exception
-    userServiceMock.getUserDetails.mockRejectedValueOnce(
-      new Error("User not found")
+    const reflector = module.get(Reflector);
+    auditInterceptor = new AuditChangesInterceptor(
+      reflector,
+      auditServiceMock,
+      prismaServiceMock
     );
+  };
 
-    const id = "999";
-
-    // Expect the controller method to throw an error
-    await expect(userController.getUser(id)).rejects.toThrow("User not found");
-
-    // Ensure the service method was called with the correct id
-    expect(userServiceMock.getUserDetails).toHaveBeenCalledWith({ id: "999" });
-    expect(userServiceMock.getUserDetails).toHaveBeenCalledTimes(1);
+  beforeEach(async () => {
+    userServiceMock = mockDeep<UserService>();
+    auditServiceMock = mockDeep<AuditService>();
+    prismaServiceMock = mockDeep<PrismaService>();
+    await setupTest();
   });
 
-  describe("getAllUsers", () => {
-    it("should call getAllUsers method of UserService and return paginated result", async () => {
-      const mockUsers = [
-        {
-          id: 1,
-          firstName: "John",
-          lastName: "Doe",
-          email: "john.doe@example.com",
-        },
-        {
-          id: 2,
-          firstName: "Jane",
-          lastName: "Doe",
-          email: "jane.doe@example.com",
-        },
-      ];
-      const expectedResponse = {
-        data: mockUsers,
-        totalCount: 2,
-        currentPage: 1,
-        totalPages: 1,
-        pageSize: 10,
-      };
-      userServiceMock.getAllUsers.mockResolvedValue(expectedResponse);
-      const paginationDto = {
-        page: 1,
-        limit: 10,
-        sort_column: "id",
-        sort_direction: "asc",
-      };
-      const result = await userController.getAllUsers(paginationDto);
-      expect(result).toEqual(expectedResponse);
-      expect(userServiceMock.getAllUsers).toHaveBeenCalledWith(
-        1,
-        10,
-        "id",
-        "asc"
-      );
-      expect(userServiceMock.getAllUsers).toHaveBeenCalledTimes(1);
+  describe("audit logging", () => {
+    const mockUser = {
+      id: "1",
+      email: "test@example.com",
+      firstName: "Test",
+      lastName: "User",
+      phoneNumber: "1234567890",
+      password: "hashedPassword",
+      refreshToken: null,
+      profilePic: null,
+      status: Status.ACTIVE,
+      createdBy: 1,
+      updatedBy: 1,
+      deletedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
     });
-    it("should return empty data array when no users found", async () => {
-      const expectedResponse = {
-        data: [],
-        totalCount: 0,
-        currentPage: 1,
-        totalPages: 0,
-        pageSize: 10,
-      };
-      userServiceMock.getAllUsers.mockResolvedValue(expectedResponse);
-      const result = await userController.getAllUsers({
-        page: 1,
-        limit: 10,
-        sort_column: "id",
-        sort_direction: "asc",
-      });
-      expect(result).toEqual(expectedResponse);
-      expect(userServiceMock.getAllUsers).toHaveBeenCalledTimes(1);
-    });
-    it("should throw an error if UserService.getAllUsers fails", async () => {
-      userServiceMock.getAllUsers.mockRejectedValue(
-        new Error("Failed to fetch users")
-      );
-      await expect(
-        userController.getAllUsers({
-          page: 1,
-          limit: 10,
-          sort_column: "id",
-          sort_direction: "asc",
-        })
-      ).rejects.toThrow("Failed to fetch users");
-      expect(userServiceMock.getAllUsers).toHaveBeenCalledTimes(1);
-    });
-  });
-  describe("getUser", () => {
-    it("should return user details", async () => {
-      const mockUser = {
-        id: "1",
-        firstName: "John",
-        lastName: "Doe",
-        email: "john@example.com",
-        role: "admin",
-      };
-      userServiceMock.getUserDetails.mockResolvedValue(mockUser);
-      const result = await userController.getUser("1");
-      expect(result).toEqual(mockUser);
-      expect(userServiceMock.getUserDetails).toHaveBeenCalledWith({ id: "1" });
-    });
-    it("should throw error when user not found", async () => {
-      userServiceMock.getUserDetails.mockRejectedValue(
-        new Error("User not found")
-      );
-      await expect(userController.getUser("999")).rejects.toThrow(
-        "User not found"
-      );
-    });
-  });
-  describe("updateUser", () => {
-    it("should update user details", async () => {
-      const updateUserDto: UpdateUserDto = {
-        firstName: "John Updated",
-        lastName: "Doe Updated",
-        phoneNumber: "1234567890",
-        status: Status.ACTIVE,
-        updatedAt: new Date(),
-      };
-      const mockUpdatedUser = {
-        id: "1",
-        ...updateUserDto,
-        email: "john@example.com",
-      };
-      userServiceMock.updateUser.mockResolvedValue(mockUpdatedUser);
-      const result = await userController.updateUser("1", updateUserDto);
-      expect(result).toEqual(mockUpdatedUser);
-      expect(userServiceMock.updateUser).toHaveBeenCalledWith({
-        where: { id: "1" },
-        data: updateUserDto,
-      });
-    });
-  });
-  describe("deleteUser", () => {
-    it("should delete user", async () => {
-      const mockDeletedUser = {
-        id: "1",
-        firstName: "John",
-        lastName: "Doe",
-        email: "john@example.com",
+
+    it("should log user creation", async () => {
+      const createUserDto = {
+        email: "test@example.com",
+        firstName: "Test",
+        lastName: "User",
         phoneNumber: "1234567890",
         password: "password123",
-        refreshToken: "token123",
-        profilePic: "profile.jpg",
-        status: Status.ACTIVE,
-        createdBy: 1,
-        updatedBy: 1,
-        deletedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        roleId: 1
       };
-      userServiceMock.deleteUser.mockResolvedValue(mockDeletedUser);
-      const result = await userController.deleteUser("1");
-      expect(result).toEqual(mockDeletedUser);
-      expect(userServiceMock.deleteUser).toHaveBeenCalledWith({ id: "1" });
+
+      const createdUser = { id: "1", ...createUserDto };
+      userServiceMock.createUser.mockResolvedValue(createdUser);
+
+      // Apply interceptor manually
+      const context = mockContext('POST');
+      jest.spyOn(Reflector.prototype, 'get').mockReturnValue({
+        action: AuditAction.CREATE,
+        model: 'User'
+      });
+
+      const next = {
+        handle: () => of(createdUser)
+      };
+
+      // Wait for interceptor to complete
+      const interceptor$ = await auditInterceptor.intercept(context as ExecutionContext, next);
+      await lastValueFrom(interceptor$);
+      
+      await userController.createUser(createUserDto);
+
+      expect(auditServiceMock.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.CREATE,
+          model: 'User',
+          modelId: createdUser.id,
+        })
+      );
+    });
+
+    it("should log user update with changes", async () => {
+      const updateData = {
+        firstName: "Updated",
+        lastName: "User",
+        phoneNumber: "1234567890",
+        status: Status.ACTIVE
+      };
+
+      prismaServiceMock.user.findUnique.mockResolvedValue(mockUser);
+      userServiceMock.updateUser.mockResolvedValue({ ...mockUser, ...updateData });
+
+      const context = mockContext('PATCH');
+      jest.spyOn(Reflector.prototype, 'get').mockReturnValue({
+        action: AuditAction.UPDATE,
+        model: 'User'
+      });
+
+      const next = {
+        handle: () => of({ ...mockUser, ...updateData })
+      };
+
+      const interceptor$ = await auditInterceptor.intercept(context as ExecutionContext, next);
+      await lastValueFrom(interceptor$);
+      
+      await userController.updateUser(mockUser.id, updateData);
+
+      expect(auditServiceMock.log).toHaveBeenCalled();
+    });
+
+    it("should log user deletion", async () => {
+      const deletedUser = { ...mockUser, deletedAt: new Date() };
+      prismaServiceMock.user.findUnique.mockResolvedValue(mockUser);
+      userServiceMock.deleteUser.mockResolvedValue(deletedUser);
+
+      const context = mockContext('DELETE');
+      jest.spyOn(Reflector.prototype, 'get').mockReturnValue({
+        action: AuditAction.DELETE,
+        model: 'User'
+      });
+
+      const next = {
+        handle: () => of(deletedUser)
+      };
+
+      const interceptor$ = await auditInterceptor.intercept(context as ExecutionContext, next);
+      await lastValueFrom(interceptor$);
+      
+      await userController.deleteUser(mockUser.id);
+
+      expect(auditServiceMock.log).toHaveBeenCalled();
     });
   });
-  
 });

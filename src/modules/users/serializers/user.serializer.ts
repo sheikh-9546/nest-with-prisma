@@ -17,4 +17,10 @@ export class UserSerializer {
   @Expose() phoneNumber: string;
 
   @Expose() stats: string;
+  @Expose() createdAt?: Date;
+  @Expose() createdBy?: number;
+  @Expose() updatedAt?: Date;
+  @Expose() updatedBy?: number;
+  @Expose() deletedAt?: Date;
+  @Expose() deletedBy?: number;
 }

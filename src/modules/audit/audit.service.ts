@@ -1,97 +1,121 @@
-import { PrismaService } from '@api/database/prisma.service';
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '@api/database/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-
-export interface AuditService {
-  logCreate(userId: string, model: string, modelId: string): Promise<any>;
-  logUpdate(userId: string, model: string, modelId: string, changes: any): Promise<any>;
-  logDelete(userId: string, model: string, modelId: string): Promise<any>;
-}
+import { CreateAuditDto } from './dto/create-audit.dto';
+import { AuditAction } from '@api/enums/audit-action.enum';
 
 @Injectable()
 export class AuditService {
   constructor(
-    private readonly prismaService: PrismaService,
+    private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  async log(auditData: {
-    userId: string;
-    action: string;
-    model: string;
-    modelId: string;
-    duration?: number;
-    oldData?: any;
-    newData?: any;
-    metadata?: any;
-  }) {
-    // Emit event for async processing
-    this.eventEmitter.emit('audit.log', auditData);
+  async log(auditData: CreateAuditDto): Promise<void> {
+    try {
+      // Emit event for async processing
+      this.eventEmitter.emit('audit.log', auditData);
 
-    // Store in database with proper typing
-    return this.prismaService.audit.create({
-      data: {
-        userId: auditData.userId,
-        action: auditData.action,
-        model: auditData.model,
-        modelId: auditData.modelId,
-        changes: {
-          old: auditData.oldData,
-          new: auditData.newData,
+      // Store in database
+      await this.prisma.audit.create({
+        data: {
+          userId: auditData.userId,
+          action: auditData.action,
+          model: auditData.model,
+          modelId: auditData.modelId,
+          changes: {
+            old: auditData.oldData,
+            new: auditData.newData,
+          },
+          duration: auditData.duration,
+          metadata: auditData.metadata,
         },
-        duration: auditData.duration,
-        metadata: auditData.metadata
-      },
-    });
+      });
+    } catch (error) {
+      // Log error but don't throw to prevent affecting main operation
+      console.error('Audit logging failed:', error);
+    }
   }
 
   async getAuditLogs(filters: {
     userId?: string;
     model?: string;
     modelId?: string;
-    action?: string;
+    action?: AuditAction;
     fromDate?: Date;
     toDate?: Date;
     page?: number;
     limit?: number;
   }) {
     const { page = 1, limit = 10, ...where } = filters;
-    const skip = (page - 1) * limit;
-
-    return this.prismaService.audit.findMany({
+    return this.prisma.audit.findMany({
       where,
-      skip,
+      skip: (page - 1) * limit,
       take: limit,
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async logCreate(userId: string, model: string, modelId: string) {
-    return this.log({
+  async logCreate(userId: string, model: string, modelId: string, metadata?: Partial<AuditMetadata>): Promise<void> {
+    await this.log({
       userId,
-      action: 'CREATE',
+      action: AuditAction.CREATE,
       model,
       modelId,
+      duration: 0,
+      metadata: {
+        ip: metadata?.ip || 'database-operation',
+        method: metadata?.method || 'CREATE',
+        path: metadata?.path || `prisma/${model.toLowerCase()}`,
+        userAgent: metadata?.userAgent || 'prisma-middleware',
+      },
     });
   }
 
-  async logUpdate(userId: string, model: string, modelId: string, changes: any) {
-    return this.log({
+  async logUpdate(
+    userId: string, 
+    model: string, 
+    modelId: string, 
+    changes: { before: any; after: any },
+    metadata?: Partial<AuditMetadata>
+  ): Promise<void> {
+    await this.log({
       userId,
-      action: 'UPDATE',
+      action: AuditAction.UPDATE,
       model,
       modelId,
-      oldData: changes.old,
-      newData: changes.new,
+      oldData: changes.before,
+      newData: changes.after,
+      duration: 0,
+      metadata: {
+        ip: metadata?.ip || 'database-operation',
+        method: metadata?.method || 'UPDATE',
+        path: metadata?.path || `prisma/${model.toLowerCase()}`,
+        userAgent: metadata?.userAgent || 'prisma-middleware',
+      },
     });
   }
 
-  async logDelete(userId: string, model: string, modelId: string) {
-    return this.log({
+  async logDelete(userId: string, model: string, modelId: string, metadata?: Partial<AuditMetadata>): Promise<void> {
+    await this.log({
       userId,
-      action: 'DELETE',
+      action: AuditAction.DELETE,
       model,
       modelId,
+      duration: 0,
+      metadata: {
+        ip: metadata?.ip || 'database-operation',
+        method: metadata?.method || 'DELETE',
+        path: metadata?.path || `prisma/${model.toLowerCase()}`,
+        userAgent: metadata?.userAgent || 'prisma-middleware',
+      },
     });
   }
+}
+
+interface AuditMetadata {
+  ip: string;
+  method: string;
+  path: string;
+  userAgent: string;
 }

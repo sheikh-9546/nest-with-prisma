@@ -21,69 +21,68 @@ export class AuditInterceptor implements NestInterceptor {
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
-    const request = context.switchToHttp().getRequest();
     const auditMetadata = this.reflector.get<AuditMetadata>(AUDIT_KEY, context.getHandler());
+    if (!auditMetadata) return next.handle();
 
-    if (!auditMetadata) {
-      return next.handle();
-    }
-
+    const request = context.switchToHttp().getRequest();
     const startTime = Date.now();
-    let oldData = null;
-
-    if (['PATCH', 'PUT', 'DELETE'].includes(request.method)) {
-      oldData = await this.getOldData(auditMetadata.model, request.params.id);
-      if (!oldData) {
-        throw new NotFoundException(`${auditMetadata.model} not found`);
-      }
-    }
+    const oldData = await this.getOldData(auditMetadata.model, request);
 
     return next.handle().pipe(
-      tap(async (data) => {
-        if (!data) return;
-        
-        const duration = Date.now() - startTime;
+      tap(async (result) => {
+        if (!result) return;
+
         await this.auditService.log({
           userId: request.user?.id,
           action: auditMetadata.action,
           model: auditMetadata.model,
-          modelId: data?.id || request.params.id,
-          duration,
+          modelId: result.id || request.params.id,
+          duration: Date.now() - startTime,
           oldData,
-          newData: this.sanitizeData(data),
-          metadata: {
-            ip: request.ip,
-            method: request.method,
-            path: request.path,
-            userAgent: request.get('user-agent'),
-          }
+          newData: this.sanitizeData(result),
+          metadata: this.getRequestMetadata(request),
         });
       })
     );
   }
 
-  private async getOldData(model: string, id: string) {
+  private async getOldData(model: string, request: any): Promise<any> {
+    if (!['PATCH', 'PUT', 'DELETE'].includes(request.method)) {
+      return null;
+    }
+
     const modelName = model.toLowerCase();
-    if (!this.prisma[modelName]) return null;
-    
+    const id = request.params.id;
+
+    if (!this.prisma[modelName] || !id) return null;
+
     try {
-      return await this.prisma[modelName].findUnique({
-        where: { id }
-      });
+      const data = await this.prisma[modelName].findUnique({ where: { id } });
+      if (!data && request.method !== 'POST') {
+        throw new NotFoundException(`${model} not found`);
+      }
+      return data;
     } catch (error) {
+      if (error instanceof NotFoundException) throw error;
       return null;
     }
   }
 
+  private getRequestMetadata(request: any) {
+    return {
+      ip: request.ip,
+      method: request.method,
+      path: request.path,
+      userAgent: request.get('user-agent'),
+    };
+  }
+
   private sanitizeData(data: any) {
     if (!data) return data;
-    
     const sanitized = { ...data };
-    const sensitiveFields = ['password', 'token', 'secret'];
-    sensitiveFields.forEach(field => {
+    ['password', 'token', 'secret'].forEach(field => {
       if (sanitized[field]) sanitized[field] = '***';
     });
-    
     return sanitized;
   }
 } 

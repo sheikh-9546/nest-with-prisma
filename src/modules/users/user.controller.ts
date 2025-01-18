@@ -26,6 +26,7 @@ import { FileUploadDestination } from '@api/enums/file-upload-destination.enum';
 import { AuditInterceptor } from '@api/modules/audit/interceptors/audit.interceptor';
 import { Audit } from '@api/modules/audit/decorators/audit.decorator';
 import { AuditChangesInterceptor } from '@api/modules/audit/interceptors/audit-changes.interceptor';
+import { AuditAction } from '@api/enums/audit-action.enum';
 
 @RestController({ path: 'users', tag: 'Users' })
 @ApiBearerAuth()
@@ -47,13 +48,13 @@ export class UserController {
   }
 
   @PostMapping({ path: 'create-user', summary: 'Allow to create a user' })
-  @Audit({ action: 'CREATE', model: 'User' })
+  @Audit({ action: AuditAction.CREATE, model: 'User' })
   async createUser(@Body() data: CreateUserDto): Promise<UserSerializer> {
     return this.userService.createUser(data);
   }
 
   @PatchMapping({ path: ':id', summary: 'Allow to update user details' })
-  @Audit({ action: 'UPDATE', model: 'User' })
+  @Audit({ action: AuditAction.UPDATE, model: 'User' })
   @UseInterceptors(AuditChangesInterceptor)
   async updateUser(
     @Param('id') id: string,
@@ -63,20 +64,20 @@ export class UserController {
   }
 
   @PatchMapping({ path: ':id/status', summary: 'Allow to update user status' })
-  @Audit({ action: 'UPDATE_STATUS', model: 'User' })
+  @Audit({ action: AuditAction.UPDATE_STATUS, model: 'User' })
   @UseInterceptors(AuditChangesInterceptor)
   async updateUserStatus(@Param('id') id: string, @Body() updateUserStatusDto: UpdateUserStatusDto) {
     return this.userService.updateUserStatus(id, updateUserStatusDto.status);
   }
 
   @DeleteMapping({ path: ':id', summary: 'Delete a user' })
-  @Audit({ action: 'DELETE', model: 'User' })
+  @Audit({ action: AuditAction.DELETE, model: 'User' })
   async deleteUser(@Param('id') id: string): Promise<User> {
     return this.userService.deleteUser({ id: id });
   }
 
   @PostMapping({ path: 'change-password', summary: 'Allow to change Password' })
-  @Audit({ action: 'CHANGE_PASSWORD', model: 'User' })
+  @Audit({ action: AuditAction.CHANGE_PASSWORD, model: 'User' })
   async changePassword(@Req() req: Request, @Body() changePasswordDto: ChangePasswordDto) {
     const userId = req.user?.id;
     return this.userService.changePassword(userId, changePasswordDto.currentPassword, changePasswordDto.newPassword);
@@ -84,7 +85,7 @@ export class UserController {
 
   @PostMapping({ path: 'upload-profile-image', summary: 'Allow to upload profile Image' })
   @UseInterceptors(FileInterceptor('file', multerConfig(FileUploadDestination.userProfile)))
-  @Audit({ action: 'UPDATE_PROFILE_IMAGE', model: 'User' })
+  @Audit({ action: AuditAction.UPLOAD_PROFILE_IMAGE, model: 'User' })
   async uploadProfile(
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request,

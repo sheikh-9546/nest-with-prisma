@@ -22,6 +22,7 @@ export class AuditChangesInterceptor implements NestInterceptor {
 
     const { model, action } = auditConfig;
     const modelId = params.id;
+    const startTime = Date.now();
 
     // Get current state if it's an update operation
     let oldData = null;
@@ -44,6 +45,7 @@ export class AuditChangesInterceptor implements NestInterceptor {
           modelId: data?.id || modelId,
           oldData,
           newData: this.sanitizeData(data),
+          duration: Date.now() - startTime,
           metadata: {
             ip: request.ip,
             method,

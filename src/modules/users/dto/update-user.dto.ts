@@ -5,6 +5,7 @@ import {
   IsNumberString,
   IsString,
   MaxLength,
+  IsOptional,
 } from 'class-validator';
 import { Expose } from 'class-transformer';
 import { Status } from '@api/enums/status.enum';
@@ -15,6 +16,7 @@ export class UpdateUserDto {
   @IsString({ message: 'Provide a valid first name as string' })
   @MaxLength(60)
   @Expose({ name: 'firstName' })
+  @IsOptional()
   public readonly firstName!: string;
 
   @ApiProperty({ type: String, required: true, name: 'lastName' })
@@ -22,6 +24,7 @@ export class UpdateUserDto {
   @IsString({ message: 'Provide a valid first name as string' })
   @MaxLength(60)
   @Expose({ name: 'lastName' })
+  @IsOptional()
   public readonly lastName!: string;
 
   @ApiProperty({ type: String, required: true, name: 'phoneNumber' })
@@ -31,11 +34,17 @@ export class UpdateUserDto {
   )
   @MaxLength(15)
   @Expose({ name: 'phoneNumber' })
+  @IsOptional()
   public readonly phoneNumber!: string;
 
   @IsNotEmpty()
   @IsEnum(Status)
+  @IsOptional()
   status: Status;
 
-  updatedAt: Date;
+  @IsOptional()
+  updatedAt?: Date;
+
+  @IsOptional()
+  updatedBy?: number;
 }

@@ -32,7 +32,10 @@ export function auditMiddleware(auditService: AuditService, prismaService: Prism
       if (action === 'create') {
         await auditService.logCreate(userIdStr, model, modelIdStr);
       } else if (action === 'update') {
-        await auditService.logUpdate(userIdStr, model, modelIdStr, changes);
+        await auditService.logUpdate(userIdStr, model, modelIdStr, {
+          before: params.args.data,
+          after: result
+        });
       } else if (action === 'delete') {
         await auditService.logDelete(userIdStr, model, modelIdStr);
       }

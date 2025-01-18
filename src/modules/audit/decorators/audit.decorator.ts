@@ -1,9 +1,10 @@
 import { SetMetadata } from '@nestjs/common';
+import { AuditAction } from '../../../enums/audit-action.enum';
 
 export const AUDIT_KEY = 'audit';
 
 export interface AuditMetadata {
-  action: string;
+  action: AuditAction;
   model: string;
 }
 
