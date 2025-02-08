@@ -52,6 +52,16 @@ model UserRole {
   @@map("user_roles")
 }
 
+model Setting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique @map("key")
+  value     String   @map("value")
+  description String? @map("description")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@map("settings")
+}
+
 model Audit {
   id        String   @id @default(uuid())
   userId    String   @map("user_id")

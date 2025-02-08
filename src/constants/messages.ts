@@ -70,5 +70,16 @@ export const Messages = {
         ROLE_DELETED_SUCCESS: 'Role has been deleted successfully',
       },
     },
+    Settings: {
+      Error: {
+        SETTING_NOT_FOUND: 'Setting not found',
+        SETTING_KEY_EXISTS: (key: string) => `Setting with key "${key}" already exists`,
+      },
+      Success: {
+        SETTING_CREATED: 'Setting created successfully',
+        SETTING_UPDATED: 'Setting updated successfully',
+        SETTING_DELETED: 'Setting deleted successfully',
+      },
+    },
   };
   
