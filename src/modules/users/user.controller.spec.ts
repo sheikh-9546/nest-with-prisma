@@ -10,12 +10,14 @@ import { Status } from "@api/enums/status.enum";
 import { AuditChangesInterceptor } from "@api/modules/audit/interceptors/audit-changes.interceptor";
 import { ExecutionContext } from "@nestjs/common";
 import { of, lastValueFrom } from 'rxjs';
+import { FileUploadService } from '../common/services/file-upload.service';
 
 describe("UserController", () => {
   let userController: UserController;
   let userServiceMock: DeepMockProxy<UserService>;
   let auditServiceMock: DeepMockProxy<AuditService>;
   let prismaServiceMock: DeepMockProxy<PrismaService>;
+  let fileUploadServiceMock: DeepMockProxy<FileUploadService>;
   let auditInterceptor: AuditChangesInterceptor;
 
   const mockContext = (method: string) => ({
@@ -47,6 +49,7 @@ describe("UserController", () => {
         { provide: UserService, useValue: userServiceMock },
         { provide: AuditService, useValue: auditServiceMock },
         { provide: PrismaService, useValue: prismaServiceMock },
+        { provide: FileUploadService, useValue: fileUploadServiceMock },
         Reflector,
       ],
     }).compile();
@@ -64,6 +67,7 @@ describe("UserController", () => {
     userServiceMock = mockDeep<UserService>();
     auditServiceMock = mockDeep<AuditService>();
     prismaServiceMock = mockDeep<PrismaService>();
+    fileUploadServiceMock = mockDeep<FileUploadService>();
     await setupTest();
   });
 

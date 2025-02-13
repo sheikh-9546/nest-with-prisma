@@ -16,6 +16,16 @@ export class AuthController {
     return this.authService.login(loginDto.email, loginDto.password);
   }
 
+  @PostMapping({ path: 'google/login', summary: 'Login with Google account' })
+  async googleLogin(@Body() { token }: { token: string }) {
+    return this.authService.googleLogin(token);
+  }
+
+  @PostMapping({ path: 'facebook/login', summary: 'Login with Facebook account' })
+  async facebookLogin(@Body() { accessToken }: { accessToken: string }) {
+    return this.authService.facebookLogin(accessToken);
+  }
+
   @PostMapping({ path: 'refresh-token',summary: 'Allow to refresh Token' })
   async refresh(@Body() refreshTokenDto: RefreshTokenDto) {
     const newTokens = await this.authService.refreshTokens(refreshTokenDto.refreshToken);
@@ -31,5 +41,6 @@ export class AuthController {
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
     return await this.authService.resetPassword(resetPasswordDto.token, resetPasswordDto.newPassword);
   }
+
 
 }

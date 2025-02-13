@@ -6,7 +6,6 @@ import { mockDeep, DeepMockProxy } from "jest-mock-extended";
 import { Status } from "@api/enums/status.enum";
 import { UserValidationService } from "./user.validation.service";
 import { EmailService } from "@api/modules/mailer/email.service";
-import * as bcrypt from "bcryptjs";
 
 jest.mock("bcryptjs", () => ({
   compare: () => Promise.resolve(true),

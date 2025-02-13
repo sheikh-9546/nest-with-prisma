@@ -8,6 +8,8 @@ import { SerializerUtil } from '@api/core/common/serializer.util';
 import { LoginResponseSerializer } from '../serializers/login-response.serializer';
 import { Status } from '@api/enums/status.enum';
 import { Messages } from '@api/constants/messages';
+import { SocialProvider, User } from '@prisma/client';
+import { SocialAuthService } from './social-auth.service';
 
 @Injectable()
 export class AuthService {
@@ -16,7 +18,8 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-  ) { }
+    private readonly socialAuthService: SocialAuthService,
+  ) {}
 
   // Unified method to generate a token for any use case
   private async createToken(payload: any, expiresIn?: string): Promise<string> {
@@ -146,5 +149,50 @@ export class AuthService {
     } catch (error) {
       throw new UnauthorizedException(Messages.Auth.Error.TOKEN_INVALID);
     }
+  }
+
+  // google login
+  async googleLogin(token: string) {
+    return this.socialLogin(SocialProvider.GOOGLE, token);
+  }
+
+  async facebookLogin(token: string) {
+    return this.socialLogin(SocialProvider.FACEBOOK, token);
+  }
+
+  private async socialLogin(provider: SocialProvider, token: string) {
+    try {
+      const socialData = await this.socialAuthService.validateSocialLogin(provider, token);
+      
+      const user = await this.userService.findOrCreateSocialUser({
+        email: socialData.email,
+        firstName: socialData.firstName,
+        lastName: socialData.lastName,
+        profilePic: socialData.profilePic,
+        provider,
+        socialId: socialData.id,
+      });
+
+      return this.generateAuthTokens(user);
+    } catch (error) {
+      const errorMessage = `Failed to authenticate with ${provider}: ${error.message}`;
+      throw new UnauthorizedException(errorMessage);
+    }
+  }
+
+  private async generateAuthTokens(user: User) {
+    const payload = { email: user.email, sub: user.id };
+    const [accessToken, refreshToken] = await Promise.all([
+      this.createToken(payload),
+      this.createToken(payload, this.configService.get<string>('JWT_REFRESH_DURATION')),
+    ]);
+
+    await this.saveRefreshToken(user.id, refreshToken);
+    
+    return {
+      ...SerializerUtil.serialize(user, LoginResponseSerializer),
+      accessToken,
+      refreshToken,
+    };
   }
 }

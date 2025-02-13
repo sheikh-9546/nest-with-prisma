@@ -10,6 +10,7 @@ import { EmailService } from '../mailer/email.service';
 import { UserValidationService } from './services/user.validation.service';
 import { RolesService } from '../roles/services/role.service';
 import { AuditModule } from '../audit/audit.module';
+import { FileUploadService } from '../common/services/file-upload.service';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AuditModule } from '../audit/audit.module';
     UserValidationService,
     RolesService,
     EmailService,
+    FileUploadService,
   ],
   exports: [UserService],
 })

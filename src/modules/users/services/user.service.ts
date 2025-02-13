@@ -5,7 +5,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { PrismaService } from "@api/database/prisma.service";
-import { Prisma, User } from "@prisma/client";
+import { Prisma, User, SocialProvider } from "@prisma/client";
 import { UserSerializer } from "../serializers/user.serializer";
 import { SerializerUtil } from "@api/core/common/serializer.util";
 import { ErrorHandler } from "@api/core/error-handler";
@@ -241,5 +241,110 @@ export class UserService {
       where: { id: userId },
       data: { profilePic: imagePath },
     });
+  }
+
+  private async findUserBySocialLogin(provider: SocialProvider, socialId: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        socialLogins: {
+          some: { provider, socialId },
+        },
+      },
+      include: {
+        userRoles: {
+          include: { role: true },
+        },
+        socialLogins: true,
+      },
+    });
+  }
+
+  private async findUserByEmailWithRelations(email: string) {
+    return this.prisma.user.findUnique({
+      where: { email },
+      include: {
+        userRoles: {
+          include: { role: true },
+        },
+        socialLogins: true,
+      },
+    });
+  }
+
+  private async createSocialUser(data: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    profilePic?: string;
+    provider: SocialProvider;
+    socialId: string;
+  }) {
+    return this.prisma.$transaction(async (prisma) => {
+      return prisma.user.create({
+        data: {
+          email: data.email,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          profilePic: data.profilePic || '',
+          phoneNumber: '',
+          status: Status.ACTIVE,
+          password: '',
+          userRoles: {
+            create: {
+              roleId: 2, // Default user role ID
+            },
+          },
+          socialLogins: {
+            create: {
+              provider: data.provider,
+              socialId: data.socialId,
+            },
+          },
+        },
+        include: {
+          userRoles: {
+            include: { role: true },
+          },
+          socialLogins: true,
+        },
+      });
+    });
+  }
+
+  private async addSocialLoginToUser(userId: string, provider: SocialProvider, socialId: string) {
+    return this.prisma.socialLogin.create({
+      data: {
+        userId,
+        provider,
+        socialId,
+      },
+    });
+  }
+
+  async findOrCreateSocialUser(data: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    profilePic?: string;
+    provider: SocialProvider;
+    socialId: string;
+  }) {
+    // Try to find user by social login first
+    let user = await this.findUserBySocialLogin(data.provider, data.socialId);
+
+    if (!user) {
+      // If not found, try to find by email
+      user = await this.findUserByEmailWithRelations(data.email);
+
+      if (!user) {
+        // If still not found, create new user
+        user = await this.createSocialUser(data);
+      } else {
+        // If found by email, add social login
+        await this.addSocialLoginToUser(user.id, data.provider, data.socialId);
+      }
+    }
+
+    return user;
   }
 }

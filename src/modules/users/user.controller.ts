@@ -8,25 +8,21 @@ import {
   PostMapping,
   RestController,
 } from '@api/core/decorators/http-mapping.decorator';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateUserDto, UpdateUserDto, UpdateUserStatusDto, UploadProfileDto } from '@api/modules/users/dto';
 import { UserSerializer } from './serializers/user.serializer';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
-import { UpdateUserStatusDto } from './dto/update-user.status.dto';
 import { UserDetailsSerializer } from './serializers/user.details.serializer';
 import { ChangePasswordDto } from '@api/interface/dto/change-password.dto';
 import { Request } from 'express';
-import { UploadProfileDto } from './dto/upload-profile.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { multerConfig } from '@api/core/common/multer.config';
 import { Express } from 'express';
-import { FileUploadDestination } from '@api/enums/file-upload-destination.enum';
 import { AuditInterceptor } from '@api/modules/audit/interceptors/audit.interceptor';
 import { Audit } from '@api/modules/audit/decorators/audit.decorator';
 import { AuditChangesInterceptor } from '@api/modules/audit/interceptors/audit-changes.interceptor';
 import { AuditAction } from '@api/enums/audit-action.enum';
+import { FileUploadService } from '@api/modules/common/services/file-upload.service';
 
 @RestController({ path: 'users', tag: 'Users' })
 @ApiBearerAuth()
@@ -34,7 +30,10 @@ import { AuditAction } from '@api/enums/audit-action.enum';
 @UseInterceptors(AuditInterceptor)
 @Controller('user')
 export class UserController {
-  constructor(private readonly userService: UserService) { }
+  constructor(
+    private readonly userService: UserService,
+    private readonly fileUploadService: FileUploadService,
+  ) { }
 
   @GetMapping({ path: 'list', summary: 'Allow to retrieve users list' })
   async getAllUsers(@Query() paginationDto: PaginationDto) {
@@ -84,7 +83,7 @@ export class UserController {
   }
 
   @PostMapping({ path: 'upload-profile-image', summary: 'Allow to upload profile Image' })
-  @UseInterceptors(FileInterceptor('file', multerConfig(FileUploadDestination.userProfile)))
+  @UseInterceptors(FileInterceptor('file'))
   @Audit({ action: AuditAction.UPLOAD_PROFILE_IMAGE, model: 'User' })
   async uploadProfile(
     @UploadedFile() file: Express.Multer.File,
@@ -92,7 +91,7 @@ export class UserController {
     @Body() uploadProfileDto: UploadProfileDto,
   ) {
     const userId = req.user?.id;
-    const filePath = `uploads/profiles/${file.filename}`;
-    return this.userService.updateUserProfileImage(userId, filePath);
+    const fileUrl = await this.fileUploadService.uploadFile(file, 'profiles');
+    return this.userService.updateUserProfileImage(userId, fileUrl);
   }
 }

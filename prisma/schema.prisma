@@ -2,6 +2,11 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum SocialProvider {
+  GOOGLE
+  FACEBOOK
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -22,6 +27,7 @@ model User {
   password     String
   refreshToken String?   @map("refresh_token")
   userRoles    UserRole[]
+  socialLogins SocialLogin[]
   profilePic   String?    @map("profile_pic")
   status       Status     @default(PENDING)
   createdBy    Int?       @map("created_by")
@@ -50,6 +56,20 @@ model UserRole {
   @@id([userId, roleId])
 
   @@map("user_roles")
+}
+
+model SocialLogin {
+  id        Int            @id @default(autoincrement())
+  provider  SocialProvider @map("provider")
+  socialId  String         @map("social_id")
+  userId    String         @map("user_id")
+  user      User           @relation(fields: [userId], references: [id])
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  @@unique([provider, socialId])
+  @@index([userId])
+  @@map("social_logins")
 }
 
 model Setting {
