@@ -131,7 +131,7 @@ describe('AuditController', () => {
 
   describe('getAuditsByUser', () => {
     it('should return audit logs filtered by user ID', async () => {
-      const userId = '1';
+      const userId = 1;
       const filterDto: AuditFilterDto = {
         page: 1,
         limit: 10,
@@ -150,7 +150,7 @@ describe('AuditController', () => {
     });
 
     it('should handle invalid user ID', async () => {
-      const userId = 'invalid';
+      const userId = 999;
       const filterDto: AuditFilterDto = {
         page: 1,
         limit: 10,
@@ -162,7 +162,7 @@ describe('AuditController', () => {
 
       expect(result).toEqual(mockPaginatedResponse);
       expect(mockAuditService.getAuditLogs).toHaveBeenCalledWith({
-        userId: NaN, // parseInt('invalid') returns NaN
+        userId: 999,
         page: 1,
         limit: 10,
       });
@@ -190,35 +190,35 @@ describe('AuditController', () => {
     });
   });
 
-  describe('getAuditDetails', () => {
+  describe('getAuditById', () => {
     it('should return audit log details by ID', async () => {
       const auditId = '1';
       mockAuditService.getAuditById.mockResolvedValue(mockAuditLog);
 
-      const result = await controller.getAuditDetails(auditId);
+      const result = await controller.getAuditById(auditId);
 
       expect(result).toEqual(mockAuditLog);
-      expect(mockAuditService.getAuditById).toHaveBeenCalledWith(1);
+      expect(mockAuditService.getAuditById).toHaveBeenCalledWith(auditId);
     });
 
     it('should handle invalid audit ID', async () => {
       const auditId = 'invalid';
       mockAuditService.getAuditById.mockResolvedValue(null);
 
-      const result = await controller.getAuditDetails(auditId);
+      const result = await controller.getAuditById(auditId);
 
       expect(result).toBeNull();
-      expect(mockAuditService.getAuditById).toHaveBeenCalledWith(NaN);
+      expect(mockAuditService.getAuditById).toHaveBeenCalledWith(auditId);
     });
 
     it('should return null when audit not found', async () => {
       const auditId = '999';
       mockAuditService.getAuditById.mockResolvedValue(null);
 
-      const result = await controller.getAuditDetails(auditId);
+      const result = await controller.getAuditById(auditId);
 
       expect(result).toBeNull();
-      expect(mockAuditService.getAuditById).toHaveBeenCalledWith(999);
+      expect(mockAuditService.getAuditById).toHaveBeenCalledWith(auditId);
     });
   });
 
@@ -245,8 +245,8 @@ describe('AuditController', () => {
 
       mockAuditService.getAuditById.mockRejectedValue(error);
 
-      await expect(controller.getAuditDetails(auditId)).rejects.toThrow(error);
-      expect(mockAuditService.getAuditById).toHaveBeenCalledWith(1);
+      await expect(controller.getAuditById(auditId)).rejects.toThrow(error);
+      expect(mockAuditService.getAuditById).toHaveBeenCalledWith(auditId);
     });
   });
 });

@@ -108,7 +108,7 @@ describe('AuditService', () => {
         oldData: null,
         newData: { name: 'John Doe', email: 'john@example.com' },
         duration: 150,
-        metadata: { ip: '192.168.1.1', userAgent: 'Mozilla/5.0' },
+        metadata: { ip: '192.168.1.1', method: 'POST', path: '/api/users', userAgent: 'Mozilla/5.0' },
       };
 
       mockPrismaService.audit.create.mockResolvedValue(mockAuditLog);
@@ -140,6 +140,8 @@ describe('AuditService', () => {
         modelId: '1',
         oldData: null,
         newData: { name: 'John Doe' },
+        duration: 100,
+        metadata: { ip: '192.168.1.1', method: 'POST', path: '/api/users', userAgent: 'Mozilla/5.0' },
       };
 
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
@@ -277,7 +279,7 @@ describe('AuditService', () => {
 
   describe('getAuditById', () => {
     it('should return audit log by id', async () => {
-      const auditId = 1;
+      const auditId = '1';
       mockPrismaService.audit.findUnique.mockResolvedValue(mockAuditLog);
 
       const result = await service.getAuditById(auditId);
@@ -300,7 +302,7 @@ describe('AuditService', () => {
     });
 
     it('should return null when audit log not found', async () => {
-      const auditId = 999;
+      const auditId = '999';
       mockPrismaService.audit.findUnique.mockResolvedValue(null);
 
       const result = await service.getAuditById(auditId);
@@ -333,7 +335,7 @@ describe('AuditService', () => {
 
       mockPrismaService.audit.create.mockResolvedValue(mockAuditLog);
 
-      await service.logCreate(userId, model, modelId, newData, metadata);
+      await service.logCreate(userId, model, modelId, metadata);
 
       expect(mockPrismaService.audit.create).toHaveBeenCalledWith({
         data: {
@@ -362,7 +364,7 @@ describe('AuditService', () => {
 
       mockPrismaService.audit.create.mockResolvedValue(mockAuditLog);
 
-      await service.logUpdate(userId, model, modelId, oldData, newData, metadata);
+      await service.logUpdate(userId, model, modelId, { before: oldData, after: newData }, metadata);
 
       expect(mockPrismaService.audit.create).toHaveBeenCalledWith({
         data: {
@@ -390,7 +392,7 @@ describe('AuditService', () => {
 
       mockPrismaService.audit.create.mockResolvedValue(mockAuditLog);
 
-      await service.logDelete(userId, model, modelId, oldData, metadata);
+      await service.logDelete(userId, model, modelId, metadata);
 
       expect(mockPrismaService.audit.create).toHaveBeenCalledWith({
         data: {
