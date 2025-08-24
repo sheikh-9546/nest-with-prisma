@@ -3,13 +3,13 @@ import {
   IsEmail,
   IsInt,
   IsNotEmpty,
-  IsNumberString,
-  IsOptional,
   IsString,
   MaxLength,
+  MinLength,
+  Matches,
 } from 'class-validator';
 import { Expose, Transform } from 'class-transformer';
-import { toLower } from 'lodash';
+import { toLower, trim } from 'lodash';
 
 export class CreateUserDto {
   @ApiProperty({
@@ -17,58 +17,101 @@ export class CreateUserDto {
     example: 'John',
     required: true,
     name: 'firstName',
+    description: 'User first name',
   })
   @IsNotEmpty({ message: 'First name is required!' })
   @IsString({ message: 'Provide a valid first name as string' })
-  @MaxLength(60)
+  @MinLength(2, { message: 'First name must be at least 2 characters long' })
+  @MaxLength(60, { message: 'First name cannot exceed 60 characters' })
+  @Transform(({ value }) => value?.trim())
   @Expose({ name: 'firstName' })
   public readonly firstName!: string;
 
   @ApiProperty({
     type: String,
-    example: 'doe',
+    example: 'Doe',
     required: true,
     name: 'lastName',
+    description: 'User last name',
   })
   @IsNotEmpty({ message: 'Last name is required!' })
-  @IsString({ message: 'Provide a valid first name as string' })
-  @MaxLength(60)
+  @IsString({ message: 'Provide a valid last name as string' })
+  @MinLength(2, { message: 'Last name must be at least 2 characters long' })
+  @MaxLength(60, { message: 'Last name cannot exceed 60 characters' })
+  @Transform(({ value }) => value?.trim())
   @Expose({ name: 'lastName' })
   public readonly lastName!: string;
 
-  @ApiProperty({ type: String, example: 'john@doe.com', required: true })
+  @ApiProperty({ 
+    type: String, 
+    example: 'john@doe.com', 
+    required: true,
+    description: 'User email address',
+  })
   @IsEmail({}, { message: 'Invalid email format' })
   @IsNotEmpty({ message: 'Email is required!' })
-  @IsString({ message: 'Provide a valid email as sting' })
-  @Transform(({ value }) => value && toLower(value))
-  @MaxLength(200)
+  @IsString({ message: 'Provide a valid email as string' })
+  @Transform(({ value }) => value?.trim()?.toLowerCase())
+  @MaxLength(200, { message: 'Email cannot exceed 200 characters' })
   public readonly email!: string;
 
   @ApiProperty({
     type: String,
-    example: '+19898232323',
+    example: '+1',
+    required: true,
+    name: 'countryCode',
+    description: 'Country code (e.g., +1, +44, +91)',
+  })
+  @IsNotEmpty({ message: 'Country code is required!' })
+  @IsString({ message: 'Country code must be a string' })
+  @Matches(/^\+[1-9]\d{0,3}$/, { 
+    message: 'Country code must be in format +X, +XX, +XXX, or +XXXX' 
+  })
+  @MaxLength(5, { message: 'Country code cannot exceed 5 characters' })
+  @Transform(({ value }) => value?.trim())
+  @Expose({ name: 'countryCode' })
+  public readonly countryCode!: string;
+
+  @ApiProperty({
+    type: String,
+    example: '9898232323',
     required: true,
     name: 'phoneNumber',
+    description: 'Phone number without country code',
   })
-  @IsNumberString(
-    {},
-    { message: 'Phone number is required and must be a valid number' },
-  )
-  @MaxLength(15)
+  @IsNotEmpty({ message: 'Phone number is required!' })
+  @IsString({ message: 'Phone number must be a string' })
+  @Matches(/^[0-9]{7,14}$/, { 
+    message: 'Phone number must be 7-14 digits without country code' 
+  })
+  @MaxLength(14, { message: 'Phone number cannot exceed 14 digits' })
+  @Transform(({ value }) => value?.trim())
   @Expose({ name: 'phoneNumber' })
   public readonly phoneNumber!: string;
 
-  @ApiProperty({ type: String, example: 'Test@123', required: true })
-  @IsString()
-  @IsNotEmpty()
-  public password: string;
+  @ApiProperty({ 
+    type: String, 
+    example: 'SecurePass123!', 
+    required: true,
+    description: 'User password (min 8 chars, must contain uppercase, lowercase, number, and special character)',
+  })
+  @IsString({ message: 'Password must be a string' })
+  @IsNotEmpty({ message: 'Password is required!' })
+  @MinLength(8, { message: 'Password must be at least 8 characters long' })
+  @MaxLength(128, { message: 'Password cannot exceed 128 characters' })
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
+    message: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+  })
+  public readonly password!: string;
 
   @ApiProperty({
+    type: Number,
     description: 'The role ID to assign to the user',
     example: 1,
+    required: true,
   })
-  @IsInt()
-  @IsNotEmpty()
-  roleId: number;
+  @IsInt({ message: 'Role ID must be an integer' })
+  @IsNotEmpty({ message: 'Role ID is required!' })
+  public readonly roleId!: number;
 
 }

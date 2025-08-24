@@ -18,7 +18,7 @@ export class UserValidationService {
     return Boolean(await this.userService.findUserByEmail(email));
   }
 
-  async isPhoneInUse(phoneNumber: string): Promise<boolean> {
-    return Boolean(await this.userService.findUserByPhoneNumber(phoneNumber));
+  async isPhoneInUse(countryCode: string, phoneNumber: string): Promise<boolean> {
+    return Boolean(await this.userService.findUserByPhoneNumber(countryCode, phoneNumber));
   }
 }

@@ -12,7 +12,16 @@ export class UserDetailsSerializer {
 
   @Expose()
   @IsString()
+  countryCode: string;
+
+  @Expose()
+  @IsString()
   phoneNumber: string;
+
+  @Expose()
+  get fullPhoneNumber(): string {
+    return `${this.countryCode}${this.phoneNumber}`;
+  }
 
   @Expose()
   get full_name(): string {

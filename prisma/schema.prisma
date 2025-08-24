@@ -26,7 +26,8 @@ model User {
   firstName    String?   @map("first_name")
   lastName     String?   @map("last_name")
   email        String    @unique
-  phoneNumber  String    @unique @map("phone_number")
+  countryCode  String    @map("country_code") // e.g., "+1", "+44", "+91"
+  phoneNumber  String    @map("phone_number")  // e.g., "2345678901"
   password     String
   refreshToken String?   @map("refresh_token")
   profilePic   String?   @map("profile_pic")
@@ -42,6 +43,8 @@ model User {
   socialLogins SocialLogin[]
   audits       Audit[]
 
+  // Unique constraint on country code + phone number combination
+  @@unique([countryCode, phoneNumber], name: "unique_phone")
   @@map("users")
 }
 

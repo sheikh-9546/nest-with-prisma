@@ -14,7 +14,14 @@ export class UserSerializer {
 
   @Expose() email: string;
 
+  @Expose() countryCode: string;
+
   @Expose() phoneNumber: string;
+
+  @Expose()
+  get fullPhoneNumber(): string {
+    return `${this.countryCode}${this.phoneNumber}`;
+  }
 
   @Expose() stats: string;
   @Expose() createdAt?: Date;

@@ -93,10 +93,15 @@ export class UserService {
     });
   }
 
-  // Method to check if an phone number is already in use
-  async findUserByPhoneNumber(phoneNumber: string): Promise<User | null> {
+  // Method to check if a phone number is already in use
+  async findUserByPhoneNumber(countryCode: string, phoneNumber: string): Promise<User | null> {
     return this.prisma.user.findUnique({
-      where: { phoneNumber },
+      where: { 
+        unique_phone: {
+          countryCode,
+          phoneNumber
+        }
+      },
     });
   }
 
@@ -104,13 +109,13 @@ export class UserService {
   async createUser(
     data: Prisma.UserCreateInput & { roleId: number }
   ): Promise<any> {
-    const { email, password, roleId, firstName, lastName, phoneNumber } = data;
+    const { email, password, roleId, firstName, lastName, countryCode, phoneNumber } = data;
 
     // Perform role and email checks in parallel to avoid sequential waits
     const [roleExists, emailExists, phoneNumberExists] = await Promise.all([
       this.userValidationService.isRoleChecked(roleId),
       this.userValidationService.isEmailInUse(email),
-      this.userValidationService.isPhoneInUse(phoneNumber),
+      this.userValidationService.isPhoneInUse(countryCode, phoneNumber),
     ]);
 
     //Check if the role exists
@@ -130,7 +135,7 @@ export class UserService {
     // Check if the phone is already in use
     if (phoneNumberExists) {
       throw new ConflictException(
-        Messages.User.Error.PHONE_NUMBER_ALREADY_EXISTS(phoneNumber)
+        Messages.User.Error.PHONE_NUMBER_ALREADY_EXISTS(`${countryCode}${phoneNumber}`)
       );
     }
 
@@ -140,6 +145,7 @@ export class UserService {
         firstName,
         lastName,
         email,
+        countryCode,
         phoneNumber,
         password: hashedPassword,
       },
@@ -289,6 +295,7 @@ export class UserService {
           firstName: data.firstName,
           lastName: data.lastName,
           profilePic: data.profilePic || '',
+          countryCode: '',
           phoneNumber: '',
           status: Status.ACTIVE,
           password: '',
