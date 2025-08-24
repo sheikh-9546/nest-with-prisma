@@ -36,7 +36,7 @@ export class AuditInterceptor implements NestInterceptor {
           userId: request.user?.id,
           action: auditMetadata.action,
           model: auditMetadata.model,
-          modelId: result.id || request.params.id,
+          modelId: String(result.id || request.params.id),
           duration: Date.now() - startTime,
           oldData,
           newData: this.sanitizeData(result),
@@ -57,7 +57,7 @@ export class AuditInterceptor implements NestInterceptor {
     if (!this.prisma[modelName] || !id) return null;
 
     try {
-      const data = await this.prisma[modelName].findUnique({ where: { id } });
+      const data = await this.prisma[modelName].findUnique({ where: { id: parseInt(id) } });
       if (!data && request.method !== 'POST') {
         throw new NotFoundException(`${model} not found`);
       }

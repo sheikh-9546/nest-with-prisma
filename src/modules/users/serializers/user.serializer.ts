@@ -1,7 +1,7 @@
 import { Expose } from "class-transformer";
 
 export class UserSerializer {
-  @Expose() id: string;
+  @Expose() id: number;
 
   @Expose() firstName: string;
 

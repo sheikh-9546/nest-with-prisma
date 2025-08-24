@@ -42,7 +42,7 @@ export class AuditChangesInterceptor implements NestInterceptor {
           userId: user?.id,
           action,
           model,
-          modelId: data?.id || modelId,
+          modelId: String(data?.id || modelId),
           oldData,
           newData: this.sanitizeData(data),
           duration: Date.now() - startTime,
@@ -63,7 +63,7 @@ export class AuditChangesInterceptor implements NestInterceptor {
     
     try {
       return await this.prisma[modelName].findUnique({
-        where: { id }
+        where: { id: parseInt(id) }
       });
     } catch (error) {
       return null;

@@ -63,7 +63,7 @@ export class AuthService {
   }
 
   //save refresh token
-  async saveRefreshToken(userId: string, refreshToken: string) {
+  async saveRefreshToken(userId: number, refreshToken: string) {
     const hashedRefreshToken = this.hashRefreshToken(refreshToken);
     await this.prisma.user.update({
       where: { id: userId },
@@ -96,7 +96,7 @@ export class AuthService {
     }
   }
 
-  async getStoredRefreshToken(userId: string) {
+  async getStoredRefreshToken(userId: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { refreshToken: true }
@@ -105,7 +105,7 @@ export class AuthService {
   }
 
   // Example of token generation for other use cases (e.g., password reset, email verification)
-  async generateCustomToken(userId: string, expiresIn: string): Promise<string> {
+  async generateCustomToken(userId: number, expiresIn: string): Promise<string> {
     const payload = { sub: userId };
     return this.createToken(payload, expiresIn);  // Use custom expiration time
   }
@@ -169,6 +169,8 @@ export class AuthService {
         firstName: socialData.firstName,
         lastName: socialData.lastName,
         profilePic: socialData.profilePic,
+        displayName: socialData.displayName,
+        accessToken: token, // Store the provided token
         provider,
         socialId: socialData.id,
       });

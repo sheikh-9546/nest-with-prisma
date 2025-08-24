@@ -42,7 +42,7 @@ export class UserController {
   }
 
   @GetMapping({ path: ':id', summary: 'Allow to retrieve user details' })
-  async getUser(@Param('id') id: string): Promise<UserDetailsSerializer> {
+  async getUser(@Param('id') id: number): Promise<UserDetailsSerializer> {
     return this.userService.getUserDetails({ id: id });
   }
 
@@ -56,7 +56,7 @@ export class UserController {
   @Audit({ action: AuditAction.UPDATE, model: 'User' })
   @UseInterceptors(AuditChangesInterceptor)
   async updateUser(
-    @Param('id') id: string,
+    @Param('id') id: number,
     @Body() userData: UpdateUserDto,
   ): Promise<User> {
     return this.userService.updateUser({ where: { id }, data: userData });
@@ -65,13 +65,13 @@ export class UserController {
   @PatchMapping({ path: ':id/status', summary: 'Allow to update user status' })
   @Audit({ action: AuditAction.UPDATE_STATUS, model: 'User' })
   @UseInterceptors(AuditChangesInterceptor)
-  async updateUserStatus(@Param('id') id: string, @Body() updateUserStatusDto: UpdateUserStatusDto) {
+  async updateUserStatus(@Param('id') id: number, @Body() updateUserStatusDto: UpdateUserStatusDto) {
     return this.userService.updateUserStatus(id, updateUserStatusDto.status);
   }
 
   @DeleteMapping({ path: ':id', summary: 'Delete a user' })
   @Audit({ action: AuditAction.DELETE, model: 'User' })
-  async deleteUser(@Param('id') id: string): Promise<User> {
+  async deleteUser(@Param('id') id: number): Promise<User> {
     return this.userService.deleteUser({ id: id });
   }
 

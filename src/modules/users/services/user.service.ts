@@ -160,7 +160,7 @@ export class UserService {
   }
 
   // Assign the role to the user
-  async createUserRole(userId: string, roleId: number): Promise<any> {
+  async createUserRole(userId: number, roleId: number): Promise<any> {
     return await this.prisma.userRole.create({
       data: {
         userId: userId,
@@ -182,7 +182,7 @@ export class UserService {
   }
 
   // update user stats
-  async updateUserStatus(userId: string, status: Status) {
+  async updateUserStatus(userId: number, status: Status) {
     return this.prisma.user.update({
       where: { id: userId },
       data: { status },
@@ -205,7 +205,7 @@ export class UserService {
 
   // user chnage password
   async changePassword(
-    userId: string,
+    userId: number,
     currentPassword: string,
     newPassword: string
   ) {
@@ -236,7 +236,7 @@ export class UserService {
   }
 
   // upload user profile image
-  async updateUserProfileImage(userId: string, imagePath: string) {
+  async updateUserProfileImage(userId: number, imagePath: string) {
     return this.prisma.user.update({
       where: { id: userId },
       data: { profilePic: imagePath },
@@ -278,6 +278,9 @@ export class UserService {
     profilePic?: string;
     provider: SocialProvider;
     socialId: string;
+    displayName?: string;
+    accessToken?: string;
+    refreshToken?: string;
   }) {
     return this.prisma.$transaction(async (prisma) => {
       return prisma.user.create({
@@ -298,6 +301,15 @@ export class UserService {
             create: {
               provider: data.provider,
               socialId: data.socialId,
+              socialEmail: data.email,
+              displayName: data.displayName,
+              firstName: data.firstName,
+              lastName: data.lastName,
+              avatarUrl: data.profilePic,
+              accessToken: data.accessToken,
+              refreshToken: data.refreshToken,
+              tokenExpiry: data.accessToken ? new Date(Date.now() + 3600000) : null,
+              isVerified: true,
             },
           },
         },
@@ -311,12 +323,34 @@ export class UserService {
     });
   }
 
-  private async addSocialLoginToUser(userId: string, provider: SocialProvider, socialId: string) {
+  private async addSocialLoginToUser(
+    userId: number, 
+    provider: SocialProvider, 
+    socialId: string,
+    socialData?: {
+      email?: string;
+      displayName?: string;
+      firstName?: string;
+      lastName?: string;
+      avatarUrl?: string;
+      accessToken?: string;
+      refreshToken?: string;
+    }
+  ) {
     return this.prisma.socialLogin.create({
       data: {
         userId,
         provider,
         socialId,
+        socialEmail: socialData?.email,
+        displayName: socialData?.displayName,
+        firstName: socialData?.firstName,
+        lastName: socialData?.lastName,
+        avatarUrl: socialData?.avatarUrl,
+        accessToken: socialData?.accessToken,
+        refreshToken: socialData?.refreshToken,
+        tokenExpiry: socialData?.accessToken ? new Date(Date.now() + 3600000) : null,
+        isVerified: true,
       },
     });
   }
@@ -328,23 +362,80 @@ export class UserService {
     profilePic?: string;
     provider: SocialProvider;
     socialId: string;
+    displayName?: string;
+    accessToken?: string;
+    refreshToken?: string;
   }) {
     // Try to find user by social login first
     let user = await this.findUserBySocialLogin(data.provider, data.socialId);
 
-    if (!user) {
-      // If not found, try to find by email
-      user = await this.findUserByEmailWithRelations(data.email);
+    if (user) {
+      // Update existing social login data
+      await this.updateSocialLoginData(user.id, data.provider, data.socialId, {
+        email: data.email,
+        displayName: data.displayName,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        avatarUrl: data.profilePic,
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+      });
+      return user;
+    }
 
-      if (!user) {
-        // If still not found, create new user
-        user = await this.createSocialUser(data);
-      } else {
-        // If found by email, add social login
-        await this.addSocialLoginToUser(user.id, data.provider, data.socialId);
-      }
+    // If not found, try to find by email
+    user = await this.findUserByEmailWithRelations(data.email);
+
+    if (!user) {
+      // If still not found, create new user
+      user = await this.createSocialUser(data);
+    } else {
+      // If found by email, add social login
+      await this.addSocialLoginToUser(user.id, data.provider, data.socialId, {
+        email: data.email,
+        displayName: data.displayName,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        avatarUrl: data.profilePic,
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+      });
     }
 
     return user;
+  }
+
+  private async updateSocialLoginData(
+    userId: number,
+    provider: SocialProvider,
+    socialId: string,
+    socialData: {
+      email?: string;
+      displayName?: string;
+      firstName?: string;
+      lastName?: string;
+      avatarUrl?: string;
+      accessToken?: string;
+      refreshToken?: string;
+    }
+  ) {
+    return this.prisma.socialLogin.updateMany({
+      where: {
+        userId,
+        provider,
+        socialId,
+      },
+      data: {
+        socialEmail: socialData.email,
+        displayName: socialData.displayName,
+        firstName: socialData.firstName,
+        lastName: socialData.lastName,
+        avatarUrl: socialData.avatarUrl,
+        accessToken: socialData.accessToken,
+        refreshToken: socialData.refreshToken,
+        tokenExpiry: socialData.accessToken ? new Date(Date.now() + 3600000) : null,
+        updatedAt: new Date(),
+      },
+    });
   }
 }

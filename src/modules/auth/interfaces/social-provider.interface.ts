@@ -4,6 +4,7 @@ export interface ISocialAuthProvider {
     email: string;
     firstName: string;
     lastName: string;
+    displayName?: string;
     profilePic?: string;
   }>;
 } 

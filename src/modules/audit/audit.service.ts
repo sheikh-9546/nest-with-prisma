@@ -38,7 +38,7 @@ export class AuditService {
   }
 
   async getAuditLogs(filters: {
-    userId?: string;
+    userId?: number;
     model?: string;
     modelId?: string;
     action?: AuditAction;
@@ -48,15 +48,59 @@ export class AuditService {
     limit?: number;
   }) {
     const { page = 1, limit = 10, ...where } = filters;
-    return this.prisma.audit.findMany({
-      where,
-      skip: (page - 1) * limit,
-      take: limit,
-      orderBy: { createdAt: 'desc' },
+    
+    const [audits, totalCount] = await Promise.all([
+      this.prisma.audit.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              userId: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      }),
+      this.prisma.audit.count({ where }),
+    ]);
+
+    return {
+      data: audits,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasNextPage: page < Math.ceil(totalCount / limit),
+        hasPreviousPage: page > 1,
+      },
+    };
+  }
+
+  async getAuditById(auditId: string) {
+    return this.prisma.audit.findUnique({
+      where: { id: auditId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            userId: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
     });
   }
 
-  async logCreate(userId: string, model: string, modelId: string, metadata?: Partial<AuditMetadata>): Promise<void> {
+  async logCreate(userId: number, model: string, modelId: string, metadata?: Partial<AuditMetadata>): Promise<void> {
     await this.log({
       userId,
       action: AuditAction.CREATE,
@@ -73,7 +117,7 @@ export class AuditService {
   }
 
   async logUpdate(
-    userId: string, 
+    userId: number, 
     model: string, 
     modelId: string, 
     changes: { before: any; after: any },
@@ -96,7 +140,7 @@ export class AuditService {
     });
   }
 
-  async logDelete(userId: string, model: string, modelId: string, metadata?: Partial<AuditMetadata>): Promise<void> {
+  async logDelete(userId: number, model: string, modelId: string, metadata?: Partial<AuditMetadata>): Promise<void> {
     await this.log({
       userId,
       action: AuditAction.DELETE,

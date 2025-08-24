@@ -3,7 +3,10 @@ import { Expose } from 'class-transformer';
 export class LoginResponseSerializer {
 
     @Expose()
-    id: string;
+    id: number;
+
+    @Expose()
+    userId: string;
 
     @Expose() firstName: string;
 

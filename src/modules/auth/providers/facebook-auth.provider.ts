@@ -32,6 +32,7 @@ export class FacebookAuthProvider implements ISocialAuthProvider {
         email: data.email,
         firstName,
         lastName: lastNameParts.join(' '),
+        displayName: data.name,
         profilePic: data.picture?.data?.url,
       };
     } catch (error) {

@@ -4,7 +4,7 @@ import {
   GetMapping,
   RestController,
 } from '@api/core/decorators/http-mapping.decorator';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { AuditFilterDto } from './dto/audit-pagination.dto';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
 
@@ -15,37 +15,45 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
-  @GetMapping({ path: 'list', summary: 'Allow to retrieve audit logs list' })
-  async getAllAudits(@Query() paginationDto: PaginationDto) {
-    const { page, limit, sort_column, sort_direction } = paginationDto;
-    return this.auditService.getAuditLogs({
-      page,
-      limit,
-      // Additional filters can be added here
-    });
+  private convertDates(dto: AuditFilterDto) {
+    return {
+      ...dto,
+      fromDate: dto.fromDate ? new Date(dto.fromDate) : undefined,
+      toDate: dto.toDate ? new Date(dto.toDate) : undefined,
+    };
   }
 
-  @GetMapping({ path: ':id', summary: 'Allow to retrieve audit log details by model ID' })
-  async getAuditsByModelId(@Param('id') modelId: string) {
+  @GetMapping({ path: 'list', summary: 'Allow to retrieve audit logs list' })
+  async getAllAudits(@Query() auditFilterDto: AuditFilterDto) {
+    return this.auditService.getAuditLogs(this.convertDates(auditFilterDto));
+  }
+
+  @GetMapping({ path: 'details/:id', summary: 'Allow to retrieve specific audit log by audit ID' })
+  async getAuditById(@Param('id') auditId: string) {
+    return this.auditService.getAuditById(auditId);
+  }
+
+  @GetMapping({ path: 'model-id/:id', summary: 'Allow to retrieve audit logs by model ID' })
+  async getAuditsByModelId(@Param('id') modelId: string, @Query() auditFilterDto: AuditFilterDto) {
     return this.auditService.getAuditLogs({
+      ...this.convertDates(auditFilterDto),
       modelId,
-      limit: 100, // You might want to adjust this limit
     });
   }
 
   @GetMapping({ path: 'user/:userId', summary: 'Allow to retrieve audit logs by user' })
-  async getAuditsByUser(@Param('userId') userId: string) {
+  async getAuditsByUser(@Param('userId') userId: number, @Query() auditFilterDto: AuditFilterDto) {
     return this.auditService.getAuditLogs({
+      ...this.convertDates(auditFilterDto),
       userId,
-      limit: 100, // You might want to adjust this limit
     });
   }
 
   @GetMapping({ path: 'model/:model', summary: 'Allow to retrieve audit logs by model type' })
-  async getAuditsByModel(@Param('model') model: string) {
+  async getAuditsByModel(@Param('model') model: string, @Query() auditFilterDto: AuditFilterDto) {
     return this.auditService.getAuditLogs({
+      ...this.convertDates(auditFilterDto),
       model,
-      limit: 100, // You might want to adjust this limit
     });
   }
 } 

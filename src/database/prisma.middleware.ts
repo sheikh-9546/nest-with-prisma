@@ -24,20 +24,16 @@ export function auditMiddleware(auditService: AuditService, prismaService: Prism
         changes = diff(before, after);
       }
 
-      // Convert numbers to strings before passing to audit service
-      const userIdStr = userId.toString();
-      const modelIdStr = modelId.toString();
-
       // Log activity based on the action
       if (action === 'create') {
-        await auditService.logCreate(userIdStr, model, modelIdStr);
+        await auditService.logCreate(userId, model, modelId.toString());
       } else if (action === 'update') {
-        await auditService.logUpdate(userIdStr, model, modelIdStr, {
+        await auditService.logUpdate(userId, model, modelId.toString(), {
           before: params.args.data,
           after: result
         });
       } else if (action === 'delete') {
-        await auditService.logDelete(userIdStr, model, modelIdStr);
+        await auditService.logDelete(userId, model, modelId.toString());
       }
     }
 

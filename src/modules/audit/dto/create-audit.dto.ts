@@ -1,7 +1,7 @@
 import { AuditAction } from '@api/enums/audit-action.enum';
 
 export class CreateAuditDto {
-  userId: string;
+  userId: number;
   action: AuditAction;
   model: string;
   modelId: string;

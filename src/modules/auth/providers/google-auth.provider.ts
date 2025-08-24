@@ -27,6 +27,7 @@ export class GoogleAuthProvider implements ISocialAuthProvider {
         email: payload.email,
         firstName: payload.given_name,
         lastName: payload.family_name,
+        displayName: payload.name,
         profilePic: payload.picture,
       };
     } catch (error) {
