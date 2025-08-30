@@ -15,6 +15,8 @@ import {
 } from "@api/core/common/utils/pagination.util";
 import * as bcrypt from "bcryptjs";
 import { Status } from "@api/enums/status.enum";
+import { PaginationDefaults } from "@api/enums/pagination.enum";
+import { SecurityConstants, DefaultRoles, UserDefaults } from "@api/enums/security.enum";
 import { UserDetailsSerializer } from "../serializers/user.details.serializer";
 import { EmailService } from "@api/modules/mailer/email.service";
 import { Messages } from "@api/constants/messages";
@@ -62,8 +64,8 @@ export class UserService {
 
   // Method to fetch all users from the database
   async getAllUsers(
-    page: number = 1,
-    limit: number = 10,
+    page: number = PaginationDefaults.DEFAULT_PAGE,
+    limit: number = PaginationDefaults.DEFAULT_LIMIT,
     sort_column: string,
     sort_direction: string
   ): Promise<PaginationResult<any>> {
@@ -139,7 +141,7 @@ export class UserService {
       );
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, SecurityConstants.BCRYPT_SALT_ROUNDS);
     const newUser = await this.prisma.user.create({
       data: {
         firstName,
@@ -231,7 +233,7 @@ export class UserService {
       );
     }
     // Hash the new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, SecurityConstants.BCRYPT_SALT_ROUNDS);
     // Update the password
     await this.prisma.user.update({
       where: { id: user.id },
@@ -294,14 +296,14 @@ export class UserService {
           email: data.email,
           firstName: data.firstName,
           lastName: data.lastName,
-          profilePic: data.profilePic || '',
-          countryCode: '',
-          phoneNumber: '',
+          profilePic: data.profilePic || UserDefaults.EMPTY_STRING,
+          countryCode: UserDefaults.EMPTY_STRING,
+          phoneNumber: UserDefaults.EMPTY_STRING,
           status: Status.ACTIVE,
-          password: '',
+          password: UserDefaults.EMPTY_STRING,
           userRoles: {
             create: {
-              roleId: 2, // Default user role ID
+              roleId: DefaultRoles.USER_ROLE_ID,
             },
           },
           socialLogins: {
@@ -315,8 +317,8 @@ export class UserService {
               avatarUrl: data.profilePic,
               accessToken: data.accessToken,
               refreshToken: data.refreshToken,
-              tokenExpiry: data.accessToken ? new Date(Date.now() + 3600000) : null,
-              isVerified: true,
+              tokenExpiry: data.accessToken ? new Date(Date.now() + SecurityConstants.TOKEN_EXPIRY_MS) : null,
+              isVerified: UserDefaults.IS_VERIFIED,
             },
           },
         },
@@ -356,8 +358,8 @@ export class UserService {
         avatarUrl: socialData?.avatarUrl,
         accessToken: socialData?.accessToken,
         refreshToken: socialData?.refreshToken,
-        tokenExpiry: socialData?.accessToken ? new Date(Date.now() + 3600000) : null,
-        isVerified: true,
+        tokenExpiry: socialData?.accessToken ? new Date(Date.now() + SecurityConstants.TOKEN_EXPIRY_MS) : null,
+        isVerified: UserDefaults.IS_VERIFIED,
       },
     });
   }
@@ -407,6 +409,9 @@ export class UserService {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
       });
+      
+      // Reload user with relations after adding social login
+      user = await this.findUserByEmailWithRelations(data.email);
     }
 
     return user;
@@ -440,7 +445,7 @@ export class UserService {
         avatarUrl: socialData.avatarUrl,
         accessToken: socialData.accessToken,
         refreshToken: socialData.refreshToken,
-        tokenExpiry: socialData.accessToken ? new Date(Date.now() + 3600000) : null,
+        tokenExpiry: socialData.accessToken ? new Date(Date.now() + SecurityConstants.TOKEN_EXPIRY_MS) : null,
         updatedAt: new Date(),
       },
     });

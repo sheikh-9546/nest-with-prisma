@@ -1,5 +1,7 @@
 import { PrismaClient, Status, SocialProvider } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+// Note: In seed files, we can use the enum values directly since this runs in Node.js context
+// If you need to import the enums, you would need to adjust the import paths
 
 const prisma = new PrismaClient();
 
@@ -36,7 +38,7 @@ async function main() {
 
   // Create Admin User
   console.log('👤 Creating admin user...');
-  const hashedAdminPassword = await bcrypt.hash('admin123', 10);
+  const hashedAdminPassword = await bcrypt.hash('admin123', 10); // Using 10 salt rounds for seeding
   const adminUser = await prisma.user.upsert({
     where: { email: 'admin@example.com' },
     update: {},

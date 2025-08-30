@@ -3,6 +3,7 @@ import { PrismaService } from '@api/database/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CreateAuditDto } from './dto/create-audit.dto';
 import { AuditAction } from '@api/enums/audit-action.enum';
+import { PaginationDefaults } from '@api/enums/pagination.enum';
 
 @Injectable()
 export class AuditService {
@@ -47,7 +48,7 @@ export class AuditService {
     page?: number;
     limit?: number;
   }) {
-    const { page = 1, limit = 10, ...where } = filters;
+    const { page = PaginationDefaults.DEFAULT_PAGE, limit = PaginationDefaults.DEFAULT_LIMIT, ...where } = filters;
     
     const [audits, totalCount] = await Promise.all([
       this.prisma.audit.findMany({

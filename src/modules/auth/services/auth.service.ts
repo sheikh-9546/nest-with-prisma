@@ -7,6 +7,7 @@ import { UserService } from '@api/modules/users/services/user.service';
 import { SerializerUtil } from '@api/core/common/serializer.util';
 import { LoginResponseSerializer } from '../serializers/login-response.serializer';
 import { Status } from '@api/enums/status.enum';
+import { SecurityConstants } from '@api/enums/security.enum';
 import { Messages } from '@api/constants/messages';
 import { SocialProvider, User } from '@prisma/client';
 import { SocialAuthService } from './social-auth.service';
@@ -25,7 +26,7 @@ export class AuthService {
   private async createToken(payload: any, expiresIn?: string): Promise<string> {
     return this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_SECRET'),
-      expiresIn: expiresIn || this.configService.get<string>('JWT_EXPIRES_IN') || '3600s',  // Default to 1 hour if not provided
+      expiresIn: expiresIn || this.configService.get<string>('JWT_EXPIRES_IN') || SecurityConstants.DEFAULT_JWT_EXPIRES_IN,
     });
   }
 
@@ -139,7 +140,7 @@ export class AuthService {
         throw new UnauthorizedException(Messages.Auth.Error.TOKEN_INVALID);
       }
       // Hash the new password 
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      const hashedPassword = await bcrypt.hash(newPassword, SecurityConstants.BCRYPT_SALT_ROUNDS);
       // Update the user's password
       await this.prisma.user.update({
         where: { id: user.id },

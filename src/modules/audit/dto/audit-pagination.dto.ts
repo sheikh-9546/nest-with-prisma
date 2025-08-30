@@ -1,17 +1,18 @@
 import { IsOptional, IsString, IsNumber, IsEnum, IsDateString } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { AuditAction } from '@api/enums/audit-action.enum';
+import { PaginationDefaults } from '@api/enums/pagination.enum';
 
 export class AuditFilterDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  page?: number = 1;
+  page?: number = PaginationDefaults.DEFAULT_PAGE;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  limit?: number = 10;
+  limit?: number = PaginationDefaults.DEFAULT_LIMIT;
 
   @IsOptional()
   @Type(() => Number)

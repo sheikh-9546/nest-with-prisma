@@ -4,6 +4,7 @@ import { Prisma, Setting } from '@prisma/client';
 import { SettingSerializer } from '@api/modules/settings/serializers/setting.serializer';
 import { SerializerUtil } from '@api/core/common/serializer.util';
 import { PaginationResult, PaginationUtil } from '@api/core/common/utils/pagination.util';
+import { PaginationDefaults } from '@api/enums/pagination.enum';
 
 @Injectable()
 export class SettingService {
@@ -28,8 +29,8 @@ export class SettingService {
   }
 
   async getAllSettings(
-    page: number = 1,
-    limit: number = 10,
+    page: number = PaginationDefaults.DEFAULT_PAGE,
+    limit: number = PaginationDefaults.DEFAULT_LIMIT,
     sort_column: string,
     sort_direction: string,
   ): Promise<PaginationResult<any>> {
