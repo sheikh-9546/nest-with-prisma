@@ -1,0 +1,341 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  pr-info:
+    name: PR Information
+    runs-on: ubuntu-latest
+    outputs:
+      has-migrations: ${{ steps.check-migrations.outputs.has-migrations }}
+      has-schema-changes: ${{ steps.check-schema.outputs.has-schema-changes }}
+      is-breaking: ${{ steps.check-breaking.outputs.is-breaking }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for database migrations
+        id: check-migrations
+        run: |
+          if git diff origin/main --name-only | grep -q "prisma/migrations/"; then
+            echo "has-migrations=true" >> $GITHUB_OUTPUT
+            echo "🗃️ Database migrations detected"
+          else
+            echo "has-migrations=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No database migrations found"
+          fi
+
+      - name: Check for schema changes
+        id: check-schema
+        run: |
+          if git diff origin/main --name-only | grep -q "prisma/schema.prisma"; then
+            echo "has-schema-changes=true" >> $GITHUB_OUTPUT
+            echo "📋 Schema changes detected"
+          else
+            echo "has-schema-changes=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No schema changes found"
+          fi
+
+      - name: Check for breaking changes
+        id: check-breaking
+        run: |
+          # Check for potentially breaking changes in commit messages or files
+          if git log origin/main..HEAD --oneline | grep -i "BREAKING\|breaking"; then
+            echo "is-breaking=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Breaking changes detected in commit messages"
+          elif git diff origin/main --name-only | grep -E "(package\.json|tsconfig\.json)"; then
+            echo "is-breaking=maybe" >> $GITHUB_OUTPUT
+            echo "🤔 Potential breaking changes in configuration files"
+          else
+            echo "is-breaking=false" >> $GITHUB_OUTPUT
+            echo "✅ No obvious breaking changes"
+          fi
+
+  commit-validation:
+    name: Commit Message Validation
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate conventional commits
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: '.commitlintrc.json'
+          failOnWarnings: true
+          helpURL: 'https://conventional-commits.org'
+
+      - name: Validate commit message format (fallback)
+        if: failure()
+        run: |
+          echo "## 📝 Commit Message Validation Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Your commit messages don't follow the [Conventional Commits](https://conventional-commits.org) standard." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Correct Format:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "<type>[optional scope]: <description>" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Valid Types:" >> $GITHUB_STEP_SUMMARY
+          echo "- **feat**: A new feature" >> $GITHUB_STEP_SUMMARY
+          echo "- **fix**: A bug fix" >> $GITHUB_STEP_SUMMARY
+          echo "- **docs**: Documentation changes" >> $GITHUB_STEP_SUMMARY
+          echo "- **style**: Code style changes" >> $GITHUB_STEP_SUMMARY
+          echo "- **refactor**: Code refactoring" >> $GITHUB_STEP_SUMMARY
+          echo "- **test**: Adding or updating tests" >> $GITHUB_STEP_SUMMARY
+          echo "- **chore**: Build process, tools, dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- **perf**: Performance improvements" >> $GITHUB_STEP_SUMMARY
+          echo "- **ci**: CI/CD configuration changes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Examples:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "feat: add user authentication" >> $GITHUB_STEP_SUMMARY
+          echo "fix: resolve login validation issue" >> $GITHUB_STEP_SUMMARY
+          echo "docs: update API documentation" >> $GITHUB_STEP_SUMMARY
+          echo "feat(auth): implement JWT token refresh" >> $GITHUB_STEP_SUMMARY
+          echo "fix(users): handle null email validation" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  quick-checks:
+    name: Quick Validation
+    runs-on: ubuntu-latest
+    needs: commit-validation
+    if: github.event.pull_request.draft == false
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Quick lint check
+        run: npm run lint
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+  test-changes:
+    name: Test Changed Files
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Get changed files
+        id: changed-files
+        run: |
+          # Get list of changed TypeScript files
+          CHANGED_FILES=$(git diff origin/main --name-only | grep '\.ts$' | grep -E '^src/' || echo "")
+          echo "Changed TypeScript files: $CHANGED_FILES"
+          
+          # Find corresponding test files
+          TEST_FILES=""
+          for file in $CHANGED_FILES; do
+            # Convert src/path/file.ts to tests/unit/path/file.spec.ts
+            test_file=$(echo "$file" | sed 's|^src/|tests/unit/|' | sed 's|\.ts$|.spec.ts|')
+            if [ -f "$test_file" ]; then
+              TEST_FILES="$TEST_FILES $test_file"
+            fi
+          done
+          
+          echo "test-files=$TEST_FILES" >> $GITHUB_OUTPUT
+
+      - name: Run tests for changed files
+        if: steps.changed-files.outputs.test-files != ''
+        run: |
+          echo "Running tests for: ${{ steps.changed-files.outputs.test-files }}"
+          npx jest ${{ steps.changed-files.outputs.test-files }} --coverage --passWithNoTests
+
+  migration-validation:
+    name: Migration Validation
+    runs-on: ubuntu-latest
+    needs: pr-info
+    if: needs.pr-info.outputs.has-migrations == 'true' || needs.pr-info.outputs.has-schema-changes == 'true'
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pr_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test migration on fresh database
+        run: |
+          export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/pr_test"
+          npx prisma migrate deploy
+          npx prisma generate
+          
+      - name: Test rollback capability
+        run: |
+          export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/pr_test"
+          echo "ℹ️ Testing rollback capability..."
+          # Note: Prisma doesn't have built-in rollback, but we can test schema reset
+          npx prisma migrate reset --force --skip-seed
+
+  size-impact:
+    name: Bundle Size Impact
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Build PR version
+        run: npm run build
+
+      - name: Get PR build size
+        id: pr-size
+        run: |
+          PR_SIZE=$(du -sb dist/ | cut -f1)
+          echo "pr-size=$PR_SIZE" >> $GITHUB_OUTPUT
+          echo "PR build size: $PR_SIZE bytes"
+
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install dependencies (main)
+        run: npm ci
+
+      - name: Generate Prisma Client (main)
+        run: npx prisma generate
+
+      - name: Build main version
+        run: npm run build
+
+      - name: Get main build size
+        id: main-size
+        run: |
+          MAIN_SIZE=$(du -sb dist/ | cut -f1)
+          echo "main-size=$MAIN_SIZE" >> $GITHUB_OUTPUT
+          echo "Main build size: $MAIN_SIZE bytes"
+
+      - name: Compare sizes
+        run: |
+          PR_SIZE=${{ steps.pr-size.outputs.pr-size }}
+          MAIN_SIZE=${{ steps.main-size.outputs.main-size }}
+          DIFF=$((PR_SIZE - MAIN_SIZE))
+          PERCENT=$(echo "scale=2; $DIFF * 100 / $MAIN_SIZE" | bc -l || echo "0")
+          
+          echo "📊 Build Size Comparison:"
+          echo "- Main: $(numfmt --to=iec $MAIN_SIZE)"
+          echo "- PR: $(numfmt --to=iec $PR_SIZE)"
+          echo "- Difference: $(numfmt --to=iec $DIFF) ($PERCENT%)"
+          
+          if [ $DIFF -gt 1048576 ]; then  # 1MB
+            echo "⚠️ Build size increased by more than 1MB"
+            echo "::warning::Build size increased significantly. Consider reviewing bundle optimization."
+          fi
+
+  pr-checks-summary:
+    name: PR Checks Summary
+    runs-on: ubuntu-latest
+    needs: [pr-info, commit-validation, quick-checks, test-changes, migration-validation, size-impact]
+    if: always() && github.event.pull_request.draft == false
+    
+    steps:
+      - name: Summary
+        run: |
+          echo "## 📋 PR Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Analysis Results:" >> $GITHUB_STEP_SUMMARY
+          echo "- Has Migrations: ${{ needs.pr-info.outputs.has-migrations }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Has Schema Changes: ${{ needs.pr-info.outputs.has-schema-changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Breaking Changes: ${{ needs.pr-info.outputs.is-breaking }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Validation Results:" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit Messages: ${{ needs.commit-validation.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Quick Checks: ${{ needs.quick-checks.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Test Changes: ${{ needs.test-changes.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Migration Validation: ${{ needs.migration-validation.result || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Size Impact: ${{ needs.size-impact.result }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check overall status
+        run: |
+          if [[ "${{ needs.commit-validation.result }}" == "failure" ||
+                "${{ needs.quick-checks.result }}" == "failure" || 
+                "${{ needs.test-changes.result }}" == "failure" || 
+                "${{ needs.migration-validation.result }}" == "failure" ]]; then
+            echo "❌ PR validation failed"
+            exit 1
+          else
+            echo "✅ PR validation passed"
+          fi

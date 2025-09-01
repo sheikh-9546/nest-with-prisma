@@ -1,0 +1,469 @@
+name: Performance Monitoring
+
+on:
+  schedule:
+    # Run performance tests daily at 3 AM UTC
+    - cron: '0 3 * * *'
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      test_duration:
+        description: 'Test duration in seconds'
+        required: false
+        default: '60'
+        type: string
+
+env:
+  NODE_VERSION: '20'
+  POSTGRES_VERSION: '15'
+
+jobs:
+  load-testing:
+    name: Load Testing
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    services:
+      postgres:
+        image: postgres:${{ env.POSTGRES_VERSION }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: perf_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup test environment
+        run: |
+          cp development.env .env
+          sed -i 's/DATABASE_URL=.*/DATABASE_URL="postgresql:\/\/postgres:postgres@localhost:5432\/perf_test"/' .env
+          sed -i 's/REDIS_URL=.*/REDIS_URL=redis:\/\/localhost:6379/' .env
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run database migrations
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/perf_test
+
+      - name: Seed database with test data
+        run: |
+          echo "🌱 Seeding database with performance test data..."
+          npm run db:seed
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/perf_test
+
+      - name: Build application
+        run: npm run build
+
+      - name: Start application
+        run: |
+          npm run start:prod &
+          APP_PID=$!
+          echo "APP_PID=$APP_PID" >> $GITHUB_ENV
+          
+          # Wait for application to start
+          for i in {1..30}; do
+            if curl -f http://localhost:3000/health >/dev/null 2>&1; then
+              echo "✅ Application started successfully"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Application failed to start"
+              exit 1
+            fi
+            sleep 2
+          done
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/perf_test
+
+      - name: Install k6 load testing tool
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Run k6 load tests
+        run: |
+          DURATION="${{ github.event.inputs.test_duration || '60' }}"
+          
+          # Create k6 test script
+          cat > load-test.js << EOF
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+          import { Rate } from 'k6/metrics';
+
+          export let errorRate = new Rate('errors');
+
+          export let options = {
+            stages: [
+              { duration: '${DURATION}s', target: 10 }, // Warm up
+              { duration: '${DURATION}s', target: 50 }, // Sustained load
+              { duration: '${DURATION}s', target: 100 }, // Peak load
+              { duration: '30s', target: 0 }, // Cool down
+            ],
+            thresholds: {
+              http_req_duration: ['p(95)<500'], // 95% of requests must complete below 500ms
+              http_req_failed: ['rate<0.1'], // Error rate must be below 10%
+            },
+          };
+
+          export default function () {
+            // Health check
+            let healthRes = http.get('http://localhost:3000/health');
+            check(healthRes, {
+              'health check status is 200': (r) => r.status === 200,
+            });
+            errorRate.add(healthRes.status !== 200);
+            
+            sleep(1);
+            
+            // API endpoint test
+            let apiRes = http.get('http://localhost:3000/api/users');
+            check(apiRes, {
+              'users API status is 200': (r) => r.status === 200,
+            });
+            errorRate.add(apiRes.status !== 200);
+            
+            sleep(2);
+            
+            // Login test
+            let loginRes = http.post('http://localhost:3000/api/auth/login', 
+              JSON.stringify({
+                email: 'test@example.com',
+                password: 'password123'
+              }), {
+                headers: { 'Content-Type': 'application/json' },
+              }
+            );
+            check(loginRes, {
+              'login status is 200 or 401': (r) => r.status === 200 || r.status === 401,
+            });
+            errorRate.add(loginRes.status !== 200 && loginRes.status !== 401);
+          }
+          EOF
+          
+          # Run k6 test with JSON output
+          k6 run --out json=k6-results.json load-test.js
+
+      - name: Run Apache Bench tests
+        run: |
+          echo "🔥 Running Apache Bench tests..."
+          
+          # Test health endpoint
+          ab -n 1000 -c 10 http://localhost:3000/health > ab-health.txt
+          
+          # Test API endpoint
+          ab -n 500 -c 5 http://localhost:3000/api/users > ab-api.txt || true
+
+      - name: Generate performance report
+        run: |
+          echo "📊 Performance Test Results" > performance-report.md
+          echo "=============================" >> performance-report.md
+          echo "" >> performance-report.md
+          
+          echo "## Load Test Summary" >> performance-report.md
+          echo "- Test Duration: ${{ github.event.inputs.test_duration || '60' }} seconds per phase" >> performance-report.md
+          echo "- Max Concurrent Users: 100" >> performance-report.md
+          echo "- Test Date: $(date)" >> performance-report.md
+          echo "" >> performance-report.md
+          
+          if [ -f artillery-report.json ]; then
+            echo "## Artillery Results" >> performance-report.md
+            echo "\`\`\`" >> performance-report.md
+            cat artillery-report.json | jq '.aggregate' >> performance-report.md || echo "Failed to parse Artillery results" >> performance-report.md
+            echo "\`\`\`" >> performance-report.md
+            echo "" >> performance-report.md
+          fi
+          
+          echo "## Apache Bench - Health Endpoint" >> performance-report.md
+          echo "\`\`\`" >> performance-report.md
+          grep -E "(Requests per second|Time per request|Transfer rate)" ab-health.txt >> performance-report.md || echo "No results available" >> performance-report.md
+          echo "\`\`\`" >> performance-report.md
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results
+          path: |
+            artillery-report.json
+            artillery-report.html
+            ab-*.txt
+            performance-report.md
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ ! -z "$APP_PID" ]; then
+            kill $APP_PID || true
+          fi
+
+  memory-profiling:
+    name: Memory Profiling
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    
+    services:
+      postgres:
+        image: postgres:${{ env.POSTGRES_VERSION }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: memory_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup test environment
+        run: |
+          cp development.env .env
+          sed -i 's/DATABASE_URL=.*/DATABASE_URL="postgresql:\/\/postgres:postgres@localhost:5432\/memory_test"/' .env
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run migrations
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/memory_test
+
+      - name: Install memory profiling tools
+        run: |
+          npm install -g clinic
+          npm install -g 0x
+          npm install -g autocannon
+
+      - name: Build application
+        run: npm run build
+
+      - name: Run memory profile with clinic.js
+        run: |
+          echo "🧠 Running memory profiling with clinic.js..."
+          
+          # Run clinic doctor for performance analysis
+          timeout 60s clinic doctor --on-port 'autocannon -c 10 -d 30 http://localhost:3000/health' -- node dist/main.js || true
+          
+          # Run clinic bubbleprof for async operations
+          timeout 60s clinic bubbleprof --on-port 'autocannon -c 5 -d 20 http://localhost:3000/api/users' -- node dist/main.js || true
+          
+          # List generated profiles
+          ls -la .clinic/ *.clinic-* || echo "No clinic profiles generated"
+
+      - name: Generate heap snapshot
+        run: |
+          echo "📸 Generating heap snapshot..."
+          node --inspect --heap-prof dist/main.js &
+          APP_PID=$!
+          
+          sleep 10
+          kill $APP_PID || true
+          
+          ls -la *.heapprofile || echo "No heap profiles generated"
+
+      - name: Upload memory profiles
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: memory-profiles
+          path: |
+            *.heapprofile
+            .clinic/
+            *.clinic-*
+          retention-days: 7
+
+  database-performance:
+    name: Database Performance
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    services:
+      postgres:
+        image: postgres:${{ env.POSTGRES_VERSION }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: db_perf_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run migrations
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/db_perf_test
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Generate test data
+        run: |
+          echo "📊 Generating performance test data..."
+          
+          # Create a script to generate test data
+          cat > generate-test-data.sql << EOF
+          -- Insert test users
+          INSERT INTO users (user_id, first_name, last_name, email, country_code, phone_number, password, status)
+          SELECT 
+            gen_random_uuid()::text,
+            'User' || generate_series,
+            'Test' || generate_series,
+            'user' || generate_series || '@test.com',
+            '+1',
+            '555' || lpad(generate_series::text, 7, '0'),
+            'hashed_password',
+            'ACTIVE'
+          FROM generate_series(1, 10000);
+          
+          -- Insert test roles
+          INSERT INTO roles (role_name) VALUES 
+          ('admin'), ('user'), ('moderator'), ('viewer');
+          
+          -- Insert user roles
+          INSERT INTO user_roles (user_id, role_id)
+          SELECT u.id, (r.id % 4) + 1
+          FROM users u
+          CROSS JOIN (SELECT generate_series(1, 4) as id) r
+          WHERE random() < 0.3;
+          EOF
+          
+          PGPASSWORD=postgres psql -h localhost -U postgres -d db_perf_test -f generate-test-data.sql
+
+      - name: Run database performance tests
+        run: |
+          echo "🏃‍♂️ Running database performance tests..."
+          
+          cat > db-perf-tests.sql << EOF
+          -- Enable timing
+          \timing on
+          
+          -- Test 1: Simple select
+          SELECT COUNT(*) FROM users;
+          
+          -- Test 2: Join query
+          SELECT u.email, r.role_name 
+          FROM users u 
+          JOIN user_roles ur ON u.id = ur.user_id 
+          JOIN roles r ON ur.role_id = r.id 
+          LIMIT 100;
+          
+          -- Test 3: Complex query
+          SELECT 
+            r.role_name,
+            COUNT(u.id) as user_count,
+            AVG(EXTRACT(EPOCH FROM (NOW() - u.created_at))) as avg_age_seconds
+          FROM users u
+          JOIN user_roles ur ON u.id = ur.user_id
+          JOIN roles r ON ur.role_id = r.id
+          GROUP BY r.role_name
+          ORDER BY user_count DESC;
+          
+          -- Test 4: Index usage
+          EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'user1000@test.com';
+          
+          -- Test 5: Full table scan
+          EXPLAIN ANALYZE SELECT COUNT(*) FROM users WHERE first_name LIKE 'User%';
+          EOF
+          
+          PGPASSWORD=postgres psql -h localhost -U postgres -d db_perf_test -f db-perf-tests.sql > db-performance-results.txt
+
+      - name: Upload database performance results
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-performance
+          path: db-performance-results.txt
+          retention-days: 30
+
+  performance-summary:
+    name: Performance Summary
+    runs-on: ubuntu-latest
+    needs: [load-testing, memory-profiling, database-performance]
+    if: always()
+    
+    steps:
+      - name: Create performance summary
+        run: |
+          echo "## 🚀 Performance Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Results:" >> $GITHUB_STEP_SUMMARY
+          echo "- Load Testing: ${{ needs.load-testing.result || 'Skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Memory Profiling: ${{ needs.memory-profiling.result || 'Skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Database Performance: ${{ needs.database-performance.result || 'Skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Reports Available:" >> $GITHUB_STEP_SUMMARY
+          echo "- Check the 'Artifacts' section for detailed performance reports" >> $GITHUB_STEP_SUMMARY
+          echo "- Memory profiles can be analyzed with Chrome DevTools" >> $GITHUB_STEP_SUMMARY
+          echo "- Database performance metrics include query timing and execution plans" >> $GITHUB_STEP_SUMMARY

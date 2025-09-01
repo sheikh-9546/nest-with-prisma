@@ -1,0 +1,337 @@
+name: Dependency Updates
+
+on:
+  schedule:
+    # Run weekly on Mondays at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      update_type:
+        description: 'Type of update'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  check-updates:
+    name: Check for Updates
+    runs-on: ubuntu-latest
+    outputs:
+      has-updates: ${{ steps.check.outputs.has-updates }}
+      update-summary: ${{ steps.check.outputs.update-summary }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install npm-check-updates
+        run: npm install -g npm-check-updates
+
+      - name: Check for updates
+        id: check
+        run: |
+          UPDATE_TYPE="${{ github.event.inputs.update_type || 'patch' }}"
+          
+          case $UPDATE_TYPE in
+            "patch")
+              TARGET="--target patch"
+              ;;
+            "minor")
+              TARGET="--target minor"
+              ;;
+            "major")
+              TARGET=""
+              ;;
+          esac
+          
+          echo "Checking for $UPDATE_TYPE updates..."
+          
+          # Check for updates and generate summary
+          if ncu $TARGET --format json > update-check.json 2>/dev/null; then
+            if [ -s update-check.json ] && [ "$(cat update-check.json)" != "{}" ]; then
+              echo "has-updates=true" >> $GITHUB_OUTPUT
+              
+              # Generate human-readable summary
+              SUMMARY=$(ncu $TARGET --format lines 2>/dev/null || echo "No updates available")
+              echo "update-summary<<EOF" >> $GITHUB_OUTPUT
+              echo "$SUMMARY" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+              
+              echo "📦 Available updates:"
+              echo "$SUMMARY"
+            else
+              echo "has-updates=false" >> $GITHUB_OUTPUT
+              echo "✅ All dependencies are up to date"
+            fi
+          else
+            echo "has-updates=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No updates to check"
+          fi
+
+      - name: Upload update check results
+        uses: actions/upload-artifact@v4
+        if: steps.check.outputs.has-updates == 'true'
+        with:
+          name: update-check-results
+          path: update-check.json
+          retention-days: 7
+
+  create-update-pr:
+    name: Create Update PR
+    runs-on: ubuntu-latest
+    needs: check-updates
+    if: needs.check-updates.outputs.has-updates == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install npm-check-updates
+        run: npm install -g npm-check-updates
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Apply updates
+        run: |
+          UPDATE_TYPE="${{ github.event.inputs.update_type || 'patch' }}"
+          BRANCH_NAME="deps/update-$UPDATE_TYPE-$(date +%Y%m%d)"
+          
+          case $UPDATE_TYPE in
+            "patch")
+              TARGET="--target patch"
+              ;;
+            "minor")
+              TARGET="--target minor"
+              ;;
+            "major")
+              TARGET=""
+              ;;
+          esac
+          
+          # Create new branch
+          git checkout -b $BRANCH_NAME
+          
+          # Update dependencies
+          ncu $TARGET -u
+          
+          # Install updated dependencies
+          npm install
+          
+          # Generate Prisma client with new dependencies
+          npx prisma generate
+          
+          # Commit changes
+          git add package.json package-lock.json
+          git commit -m "chore: update $UPDATE_TYPE dependencies
+
+          ${{ needs.check-updates.outputs.update-summary }}
+          
+          Automated dependency update via GitHub Actions"
+          
+          # Push branch
+          git push origin $BRANCH_NAME
+          
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
+      - name: Create Pull Request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `chore: update ${{ github.event.inputs.update_type || 'patch' }} dependencies`,
+              head: process.env.BRANCH_NAME,
+              base: 'main',
+              body: `## 📦 Dependency Updates
+
+            This PR contains automated dependency updates for ${{ github.event.inputs.update_type || 'patch' }} versions.
+
+            ### 🔄 Updated Dependencies:
+            \`\`\`
+            ${{ needs.check-updates.outputs.update-summary }}
+            \`\`\`
+
+            ### ✅ Automated Checks:
+            - [ ] Dependencies updated
+            - [ ] Lock file updated  
+            - [ ] Prisma client regenerated
+            - [ ] Tests will run automatically
+
+            ### 🚀 Next Steps:
+            1. Review the changes
+            2. Ensure all tests pass
+            3. Merge if everything looks good
+
+            ---
+            *This PR was created automatically by the dependency update workflow.*`,
+              draft: false
+            });
+            
+            console.log(`Created PR #${pr.number}: ${pr.html_url}`);
+
+  security-updates:
+    name: Security Updates
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Check for security vulnerabilities
+        id: security-check
+        run: |
+          # Run npm audit and capture output
+          if npm audit --audit-level=moderate --json > audit-results.json 2>/dev/null; then
+            VULNERABILITIES=$(cat audit-results.json | jq '.metadata.vulnerabilities.total // 0')
+            if [ "$VULNERABILITIES" -gt 0 ]; then
+              echo "has-vulnerabilities=true" >> $GITHUB_OUTPUT
+              echo "vulnerability-count=$VULNERABILITIES" >> $GITHUB_OUTPUT
+              echo "🚨 Found $VULNERABILITIES security vulnerabilities"
+            else
+              echo "has-vulnerabilities=false" >> $GITHUB_OUTPUT
+              echo "✅ No security vulnerabilities found"
+            fi
+          else
+            echo "has-vulnerabilities=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Could not check for vulnerabilities"
+          fi
+
+      - name: Apply security fixes
+        if: steps.security-check.outputs.has-vulnerabilities == 'true'
+        run: |
+          BRANCH_NAME="security/fix-vulnerabilities-$(date +%Y%m%d-%H%M)"
+          
+          # Create new branch
+          git checkout -b $BRANCH_NAME
+          
+          # Apply security fixes
+          npm audit fix
+          
+          # If npm audit fix didn't work, try force
+          if [ $? -ne 0 ]; then
+            npm audit fix --force
+          fi
+          
+          # Regenerate Prisma client
+          npx prisma generate
+          
+          # Check if there are changes to commit
+          if git diff --quiet package.json package-lock.json; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          # Commit changes
+          git add package.json package-lock.json
+          git commit -m "security: fix security vulnerabilities
+
+          Fixed ${{ steps.security-check.outputs.vulnerability-count }} security vulnerabilities.
+          
+          Automated security update via GitHub Actions"
+          
+          # Push branch
+          git push origin $BRANCH_NAME
+          
+          echo "SECURITY_BRANCH=$BRANCH_NAME" >> $GITHUB_ENV
+
+      - name: Create Security PR
+        if: steps.security-check.outputs.has-vulnerabilities == 'true' && env.SECURITY_BRANCH
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 security: fix ${{ steps.security-check.outputs.vulnerability-count }} security vulnerabilities`,
+              head: process.env.SECURITY_BRANCH,
+              base: 'main',
+              body: `## 🚨 Security Update
+
+            This PR contains automated security fixes for dependencies.
+
+            ### 🔒 Security Issues Fixed:
+            - **${{ steps.security-check.outputs.vulnerability-count }}** security vulnerabilities resolved
+
+            ### 🛠️ Changes Made:
+            - Updated vulnerable dependencies
+            - Regenerated lock file
+            - Regenerated Prisma client
+
+            ### ⚠️ Important:
+            This is an automated security update. Please review the changes carefully and ensure all tests pass before merging.
+
+            ### 🚀 Next Steps:
+            1. Review the dependency changes
+            2. Run tests to ensure compatibility
+            3. Merge as soon as possible to address security issues
+
+            ---
+            *This PR was created automatically by the security update workflow.*`,
+              draft: false
+            });
+            
+            console.log(`Created security PR #${pr.number}: ${pr.html_url}`);
+
+  prisma-updates:
+    name: Prisma Updates
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Check Prisma versions
+        run: |
+          echo "📊 Current Prisma versions:"
+          npm list @prisma/client prisma --depth=0 || true
+          
+          echo ""
+          echo "📦 Latest Prisma versions:"
+          npm view @prisma/client version
+          npm view prisma version
