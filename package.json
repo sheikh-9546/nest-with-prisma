@@ -27,7 +27,7 @@
     "commitlint:check": "commitlint --from=HEAD~1 --to=HEAD --verbose"
   },
   "dependencies": {
-    "@getbrevo/brevo": "^2.2.0",
+    "@getbrevo/brevo": "^3.0.1",
     "@nestjs/axios": "^4.0.0",
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^3.2.3",
@@ -61,7 +61,7 @@
   "devDependencies": {
     "@commitlint/cli": "^18.4.3",
     "@commitlint/config-conventional": "^18.4.3",
-    "@nestjs/cli": "^10.0.0",
+    "@nestjs/cli": "^11.0.10",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.4.15",
     "@types/bcrypt": "^5.0.2",
