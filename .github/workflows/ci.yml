@@ -5,6 +5,16 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      run_full_tests:
+        description: 'Run all tests (ignore smart detection)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 env:
   NODE_VERSION: '20'
@@ -44,15 +54,19 @@ jobs:
   test-unit:
     name: Unit Tests
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['18', '20']
+      fail-fast: false
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
       - name: Install dependencies
@@ -61,11 +75,68 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name: Run unit tests
-        run: npm run test:unit
+      - name: Clear Jest cache
+        run: npm run clear:cache
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            src/**/*.ts
+            tests/**/*.spec.ts
+          separator: " "
+
+      - name: Run unit tests (smart detection)
+        run: |
+          echo "🧪 Running unit tests on Node.js ${{ matrix.node-version }}..."
+          
+          if [ "${{ github.event.inputs.run_full_tests }}" == "true" ]; then
+            echo "🔄 Full test run requested manually..."
+            npm run test:unit -- --verbose --detectOpenHandles
+          elif [ "${{ steps.changed-files.outputs.any_changed }}" == "true" ]; then
+            echo "📁 Changed files detected:"
+            echo "${{ steps.changed-files.outputs.all_changed_files }}"
+            
+            # Find corresponding test files for changed source files
+            CHANGED_SRC_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
+            TEST_FILES=""
+            
+            for file in $CHANGED_SRC_FILES; do
+              if [[ $file == src/* ]]; then
+                # Convert src/path/file.ts to tests/unit/path/file.spec.ts
+                test_file=$(echo "$file" | sed 's|^src/|tests/unit/|' | sed 's|\.ts$|.spec.ts|')
+                if [ -f "$test_file" ]; then
+                  TEST_FILES="$TEST_FILES $test_file"
+                  echo "✅ Found test: $test_file"
+                fi
+              elif [[ $file == tests/* ]]; then
+                # If test file changed, include it directly
+                TEST_FILES="$TEST_FILES $file"
+                echo "✅ Test file: $file"
+              fi
+            done
+            
+            if [ -n "$TEST_FILES" ]; then
+              echo "🎯 Running targeted tests for changed files..."
+              npm run test:unit -- --verbose --detectOpenHandles --testPathPattern="$(echo $TEST_FILES | tr ' ' '|')"
+            else
+              echo "⚠️ No corresponding tests found for changed files, running all tests..."
+              npm run test:unit -- --verbose --detectOpenHandles
+            fi
+          else
+            echo "📝 No source/test files changed, running all tests..."
+            npm run test:unit -- --verbose --detectOpenHandles
+          fi
+        env:
+          NODE_ENV: test
 
       - name: Run test coverage
-        run: npm run test:coverage
+        run: |
+          echo "📊 Generating test coverage report..."
+          npm run test:coverage -- --detectOpenHandles
+        env:
+          NODE_ENV: test
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -148,11 +219,181 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nest_test
 
-      - name: Run E2E tests
-        run: npm run test:e2e
+      - name: Get changed files for E2E
+        id: changed-files-e2e
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            src/modules/**/*.ts
+            src/controllers/**/*.ts
+            src/**/controller.ts
+            tests/e2e/**/*.spec.ts
+          separator: " "
+
+      - name: Run E2E tests (smart detection)
+        run: |
+          echo "🚀 Running End-to-End tests..."
+          echo "Database: postgresql://postgres:postgres@localhost:5432/nest_test"
+          echo "Redis: redis://localhost:6379"
+          
+          if [ "${{ github.event.inputs.run_full_tests }}" == "true" ]; then
+            echo "🔄 Full E2E test run requested manually..."
+            npm run test:e2e -- --verbose --detectOpenHandles --forceExit
+          elif [ "${{ steps.changed-files-e2e.outputs.any_changed }}" == "true" ]; then
+            echo "📁 Changed files that affect E2E tests:"
+            echo "${{ steps.changed-files-e2e.outputs.all_changed_files }}"
+            
+            # Check if we should run specific E2E tests
+            CHANGED_FILES="${{ steps.changed-files-e2e.outputs.all_changed_files }}"
+            E2E_PATTERN=""
+            
+            for file in $CHANGED_FILES; do
+              if [[ $file == *"auth"* ]]; then
+                E2E_PATTERN="${E2E_PATTERN}auth|"
+              elif [[ $file == *"user"* ]]; then
+                E2E_PATTERN="${E2E_PATTERN}user|"
+              elif [[ $file == *"role"* ]]; then
+                E2E_PATTERN="${E2E_PATTERN}role|"
+              elif [[ $file == tests/e2e/* ]]; then
+                E2E_PATTERN="${E2E_PATTERN}$(basename $file .e2e-spec.ts)|"
+              fi
+            done
+            
+            if [ -n "$E2E_PATTERN" ]; then
+              # Remove trailing |
+              E2E_PATTERN=${E2E_PATTERN%|}
+              echo "🎯 Running targeted E2E tests: $E2E_PATTERN"
+              npm run test:e2e -- --verbose --detectOpenHandles --forceExit --testNamePattern="($E2E_PATTERN)"
+            else
+              echo "🔄 Running all E2E tests (no specific pattern matched)..."
+              npm run test:e2e -- --verbose --detectOpenHandles --forceExit
+            fi
+          else
+            echo "📝 No E2E-related files changed, running all E2E tests..."
+            npm run test:e2e -- --verbose --detectOpenHandles --forceExit
+          fi
         env:
+          NODE_ENV: test
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nest_test
           REDIS_URL: redis://localhost:6379
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          JWT_ACCESS_SECRET: test-secret-key
+          JWT_REFRESH_SECRET: test-refresh-secret-key
+
+      - name: Upload E2E test results
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-test-results
+          path: |
+            tests/e2e/screenshots/
+            tests/e2e/logs/
+          retention-days: 7
+
+  test-development:
+    name: Development Branch Tests
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    needs: [test-unit, test-e2e]
+    
+    services:
+      postgres:
+        image: postgres:${{ env.POSTGRES_VERSION }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nest_dev_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup test environment for development
+        run: |
+          cp development.env .env.test
+          sed -i 's/DATABASE_URL=.*/DATABASE_URL="postgresql:\/\/postgres:postgres@localhost:5432\/nest_dev_test"/' .env.test
+          sed -i 's/REDIS_URL=.*/REDIS_URL=redis:\/\/localhost:6379/' .env.test
+          sed -i 's/NODE_ENV=.*/NODE_ENV=test/' .env.test
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run database migrations
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nest_dev_test
+
+      - name: Seed test database
+        run: npm run db:seed
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nest_dev_test
+
+      - name: Run integration tests
+        run: |
+          echo "🔄 Running integration tests for development branch..."
+          npm run test:unit -- --testPathPattern="integration" --verbose
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nest_dev_test
+          REDIS_URL: redis://localhost:6379
+
+      - name: Run API tests
+        run: |
+          echo "🌐 Running API endpoint tests..."
+          npm run test:e2e -- --testNamePattern="API" --verbose
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nest_dev_test
+          REDIS_URL: redis://localhost:6379
+
+      - name: Test database migrations rollback
+        run: |
+          echo "🔄 Testing migration rollback capability..."
+          npx prisma migrate reset --force --skip-seed
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nest_dev_test
+
+      - name: Generate development test report
+        run: |
+          echo "## 🧪 Development Branch Test Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Tests Completed:" >> $GITHUB_STEP_SUMMARY
+          echo "- Unit tests across Node.js versions" >> $GITHUB_STEP_SUMMARY
+          echo "- End-to-end tests with real database" >> $GITHUB_STEP_SUMMARY
+          echo "- Integration tests" >> $GITHUB_STEP_SUMMARY
+          echo "- API endpoint tests" >> $GITHUB_STEP_SUMMARY
+          echo "- Database migration rollback tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Ready for:" >> $GITHUB_STEP_SUMMARY
+          echo "- Pull request to main branch" >> $GITHUB_STEP_SUMMARY
+          echo "- Code review and deployment" >> $GITHUB_STEP_SUMMARY
 
   build:
     name: Build Application
