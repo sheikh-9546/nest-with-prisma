@@ -7,8 +7,8 @@ async function bootstrap() {
 
   // Swagger Configuration
   const config = new DocumentBuilder()
-    .setTitle('Nest js With Prisma')
-    .setDescription('Documents API')
+    .setTitle('User Module API Documentation')
+    .setDescription('User Module API Documentation')
     .setVersion('1.0')
     .addBearerAuth() 
     .build();
