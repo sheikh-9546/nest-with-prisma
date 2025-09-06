@@ -61,7 +61,10 @@ export class AuthService {
     };
     const accessToken = await this.createToken(payload);
     const refreshToken = await this.createToken(payload, this.configService.get<string>('JWT_REFRESH_DURATION'));
-    await this.saveRefreshToken(user.id, refreshToken);
+    
+    // Update lastLoginAt and save refresh token
+    await this.updateLastLoginAndRefreshToken(user.id, refreshToken);
+    
     const serializedUser = SerializerUtil.serialize(user, LoginResponseSerializer);
     return {
       ...serializedUser,
@@ -70,14 +73,19 @@ export class AuthService {
     };
   }
 
-  //save refresh token
-  async saveRefreshToken(userId: number, refreshToken: string) {
+  //save refresh token and last login at
+  async updateLastLoginAndRefreshToken(userId: number, refreshToken: string) {
     const hashedRefreshToken = this.hashRefreshToken(refreshToken);
     await this.prisma.user.update({
       where: { id: userId },
-      data: { refreshToken: hashedRefreshToken },
+      data: { 
+        refreshToken: hashedRefreshToken,
+        lastLoginAt: new Date()
+      },
     });
   }
+
+
 
   private hashRefreshToken(refreshToken: string): string {
     // Implement a hashing function (e.g., using bcrypt)
@@ -142,14 +150,15 @@ export class AuthService {
         
         // Only blacklist if token hasn't expired yet
         if (expirationTime > currentTime) {
-          const ttl = Math.floor((expirationTime - currentTime) / 1000); // TTL in seconds
-          
-          // Store in database (you could also use Redis for better performance)
-          await this.prisma.$executeRaw`
-            INSERT INTO blacklisted_tokens (token_id, expires_at) 
-            VALUES (${decoded.jti || token}, ${new Date(expirationTime)})
-            ON CONFLICT (token_id) DO NOTHING
-          `;
+          // Use Prisma upsert instead of raw query
+          await this.prisma.blacklistedToken.upsert({
+            where: { tokenId: decoded.jti || token },
+            update: {}, // Do nothing if exists
+            create: {
+              tokenId: decoded.jti || token,
+              expiresAt: new Date(expirationTime)
+            }
+          });
         }
       }
     } catch (error) {
@@ -161,12 +170,15 @@ export class AuthService {
   // Check if a token is blacklisted
   async isTokenBlacklisted(tokenId: string): Promise<boolean> {
     try {
-      const result = await this.prisma.$queryRaw`
-        SELECT 1 FROM blacklisted_tokens 
-        WHERE token_id = ${tokenId} AND expires_at > NOW()
-        LIMIT 1
-      `;
-      return Array.isArray(result) && result.length > 0;
+      const blacklistedToken = await this.prisma.blacklistedToken.findFirst({
+        where: {
+          tokenId: tokenId,
+          expiresAt: {
+            gt: new Date() // Greater than current time
+          }
+        }
+      });
+      return !!blacklistedToken;
     } catch (error) {
       console.error('Failed to check token blacklist:', error);
       return false; // Fail open - don't block valid tokens due to DB issues
@@ -176,19 +188,24 @@ export class AuthService {
   // Blacklist all tokens for a specific user (nuclear option)
   async blacklistAllUserTokens(userId: number): Promise<void> {
     try {
-      // This is a more aggressive approach - blacklist tokens by user pattern
-      // Note: This requires storing user info in JWT or tracking tokens per user
-      const userTokenPattern = `%"sub":${userId}%`;
+      // Create a unique blacklist entry for this user
+      const tokenId = `user-${userId}-${Date.now()}`;
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
       
-      await this.prisma.$executeRaw`
-        INSERT INTO blacklisted_tokens (token_id, expires_at)
-        SELECT CONCAT('user-', ${userId}, '-', EXTRACT(EPOCH FROM NOW())), 
-               NOW() + INTERVAL '24 hours'
-        ON CONFLICT (token_id) DO NOTHING
-      `;
+      await this.prisma.blacklistedToken.create({
+        data: {
+          tokenId,
+          expiresAt
+        }
+      });
       
       console.log(`Blacklisted all tokens for user ${userId}`);
     } catch (error) {
+      // Handle duplicate key error gracefully
+      if (error.code === 'P2002') {
+        console.log(`User ${userId} tokens already blacklisted`);
+        return;
+      }
       console.error('Failed to blacklist all user tokens:', error);
     }
   }
@@ -214,11 +231,14 @@ export class AuthService {
       // Set expiration to 24 hours from now (or use JWT expiration if available)
       const expirationTime = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
       
-      await this.prisma.$executeRaw`
-        INSERT INTO blacklisted_tokens (token_id, expires_at) 
-        VALUES (${tokenId}, ${expirationTime})
-        ON CONFLICT (token_id) DO NOTHING
-      `;
+      await this.prisma.blacklistedToken.upsert({
+        where: { tokenId },
+        update: {}, // Do nothing if exists
+        create: {
+          tokenId,
+          expiresAt: expirationTime
+        }
+      });
       
       console.log(`Token ${tokenId} blacklisted successfully`);
     } catch (error) {
@@ -325,7 +345,8 @@ export class AuthService {
       this.createToken(payload, this.configService.get<string>('JWT_REFRESH_DURATION')),
     ]);
 
-    await this.saveRefreshToken(user.id, refreshToken);
+    // Update lastLoginAt and save refresh token
+    await this.updateLastLoginAndRefreshToken(user.id, refreshToken);
     
     return {
       ...SerializerUtil.serialize(user, LoginResponseSerializer),

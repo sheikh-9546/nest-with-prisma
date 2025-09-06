@@ -29,9 +29,11 @@ model User {
   countryCode  String    @map("country_code") // e.g., "+1", "+44", "+91"
   phoneNumber  String    @map("phone_number")  // e.g., "2345678901"
   password     String
+  dateOfBirth  DateTime? @map("date_of_birth")
   refreshToken String?   @map("refresh_token")
   profilePic   String?   @map("profile_pic")
   status       Status    @default(PENDING)
+  lastLoginAt  DateTime? @map("last_login_at")
   createdBy    Int?      @map("created_by")
   updatedBy    Int?      @map("updated_by")
   deletedAt    DateTime? @map("deleted_at")

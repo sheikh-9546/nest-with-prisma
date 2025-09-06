@@ -29,16 +29,10 @@ export class AuthController {
   }
 
   @PostMapping({ path: 'refresh-token',summary: 'Allow to refresh Token' })
-  async refresh(
-    @Body() refreshTokenDto: RefreshTokenDto,
-    @Headers('authorization') authHeader?: string
-  ) {
-    const oldAccessToken = refreshTokenDto.accessToken || 
-      (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined);
-    
+  async refresh(@Body() refreshTokenDto: RefreshTokenDto) {
     return await this.authService.refreshTokens(
       refreshTokenDto.refreshToken, 
-      oldAccessToken
+      refreshTokenDto.accessToken // Optional old token for blacklisting
     );
   }
 

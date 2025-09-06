@@ -8,9 +8,7 @@ import { DomainsModule } from './modules/domains.module';
 import { PrismaModule } from './database/prisma.module';
 import { Configuration } from './config';
 import { LoggerModule } from 'nestjs-pino';
-import { ErrorHandlerFilter } from './core/error-handler.filter';
 import { CustomValidationExceptionFilter } from './core/filters/custom-validation-exception.filter';
-import { AuditModule } from './modules/audit/audit.module';
 import { ValidationModule } from './core/validation';
 
 @Module({
@@ -39,7 +37,6 @@ import { ValidationModule } from './core/validation';
     { provide: APP_PIPE, useClass: TrimPipe },
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
     { provide: APP_FILTER, useClass: CustomValidationExceptionFilter },
-    // { provide: APP_FILTER, useClass: ErrorHandlerFilter },
   ],
 })
 export class AppModule {}
