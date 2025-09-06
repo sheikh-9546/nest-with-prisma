@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class RefreshTokenDto {
   @ApiProperty({
@@ -9,4 +9,13 @@ export class RefreshTokenDto {
   @IsString()
   @IsNotEmpty()
   refreshToken: string;
+
+  @ApiProperty({
+    description: 'The current access token to blacklist (optional)',
+    example: '',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  accessToken?: string;
 }

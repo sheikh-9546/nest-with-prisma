@@ -1,10 +1,12 @@
-import { Controller, Body } from '@nestjs/common';
+import { Controller, Body, Headers, UseGuards, Request } from '@nestjs/common';
 import { AuthService } from './services/auth.service';
 import { LoginDto } from '@api/interface/dto/login.dto';
 import { PostMapping, RestController } from '@api/core/decorators/http-mapping.decorator';
 import { RefreshTokenDto } from '@api/interface/dto/refresh-token.dto';
 import { RequestPasswordResetDto } from '@api/interface/dto/request-password-reset.dto';
 import { ResetPasswordDto } from '@api/interface/dto/reset-password.dto';
+import { JwtAuthGuard } from './guard/jwt-auth.guard';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 @RestController({ path: 'auth', tag: 'Auth' })
 @Controller('auth')
@@ -27,9 +29,17 @@ export class AuthController {
   }
 
   @PostMapping({ path: 'refresh-token',summary: 'Allow to refresh Token' })
-  async refresh(@Body() refreshTokenDto: RefreshTokenDto) {
-    const newTokens = await this.authService.refreshTokens(refreshTokenDto.refreshToken);
-    return newTokens;
+  async refresh(
+    @Body() refreshTokenDto: RefreshTokenDto,
+    @Headers('authorization') authHeader?: string
+  ) {
+    const oldAccessToken = refreshTokenDto.accessToken || 
+      (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined);
+    
+    return await this.authService.refreshTokens(
+      refreshTokenDto.refreshToken, 
+      oldAccessToken
+    );
   }
 
   @PostMapping({ path: 'forgot-password',summary: 'Allow to forgot Password' })
@@ -42,5 +52,23 @@ export class AuthController {
     return await this.authService.resetPassword(resetPasswordDto.token, resetPasswordDto.newPassword);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @PostMapping({ path: 'logout', summary: 'Logout from current device' })
+  async logout(@Request() req: any) {
+    // The JWT Guard already validated the token and provides user info
+    const userId = req.user.id;
+    const tokenId = req.user.jti; // JWT ID from the validated token
+    
+    return await this.authService.logoutByUserId(userId, tokenId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @PostMapping({ path: 'logout-all', summary: 'Logout from all devices' })
+  async logoutFromAllDevices(@Request() req: any) {
+    const userId = req.user.id;
+    return await this.authService.logoutFromAllDevices(userId);
+  }
 
 }

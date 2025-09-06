@@ -11,38 +11,39 @@ import { Messages } from '@api/constants/messages';
 
 @ValidatorConstraint({ async: true })
 @Injectable()
-export class IsEmailUniqueConstraint implements ValidatorConstraintInterface {
+export class IsRoleExistsConstraint implements ValidatorConstraintInterface {
   constructor(private readonly prisma: PrismaService) {}
 
-  async validate(email: string, args: ValidationArguments): Promise<boolean> {
-    if (!email) {
-      return true; // Let other validators handle required validation
+  async validate(roleId: number, args: ValidationArguments): Promise<boolean> {
+    if (!roleId) {
+      return false; // Let required validation handle this
     }
 
     try {
-      const user = await this.prisma.user.findUnique({
-        where: { email },
+      const role = await this.prisma.role.findUnique({
+        where: { id: roleId },
       });
-      return !user;
+      
+      return Boolean(role);
     } catch (error) {
-      console.error('Email validation error:', error);
+      console.error('Role validation error:', error);
       return false; // Fail validation if database error occurs
     }
   }
 
   defaultMessage(args: ValidationArguments): string {
-    return Messages.User.Error.EMAIL_ALREADY_EXISTS(args.value);
+    return Messages.Role.Error.IS_ROLE_NOT_FOUND(args.value);
   }
 }
 
-export function IsEmailUnique(validationOptions?: ValidationOptions) {
+export function IsRoleExists(validationOptions?: ValidationOptions) {
   return function (object: Object, propertyName: string) {
     registerDecorator({
       target: object.constructor,
       propertyName: propertyName,
       options: validationOptions,
       constraints: [],
-      validator: IsEmailUniqueConstraint,
+      validator: IsRoleExistsConstraint,
     });
   };
 }

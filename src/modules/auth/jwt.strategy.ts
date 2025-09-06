@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './services/auth.service';
+import { Messages } from '@api/constants/messages';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -18,6 +19,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    return { id: payload.sub, email: payload.email }; 
+    // Check if token is blacklisted
+    if (payload.jti && await this.authService.isTokenBlacklisted(payload.jti)) {
+      throw new UnauthorizedException(Messages.Auth.Error.TOKEN_INVALID);
+    }
+    
+    return { id: payload.sub, email: payload.email, jti: payload.jti };
   }
 }

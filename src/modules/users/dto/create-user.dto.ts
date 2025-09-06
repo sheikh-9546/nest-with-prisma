@@ -9,7 +9,7 @@ import {
   Matches,
 } from 'class-validator';
 import { Expose, Transform } from 'class-transformer';
-import { toLower, trim } from 'lodash';
+import { IsEmailUnique, IsPhoneUnique, IsRoleExists } from '@api/core/validation';
 
 export class CreateUserDto {
   @ApiProperty({
@@ -51,6 +51,7 @@ export class CreateUserDto {
   @IsEmail({}, { message: 'Invalid email format' })
   @IsNotEmpty({ message: 'Email is required!' })
   @IsString({ message: 'Provide a valid email as string' })
+  @IsEmailUnique() // Uses Messages.User.Error.EMAIL_ALREADY_EXISTS automatically
   @Transform(({ value }) => value?.trim()?.toLowerCase())
   @MaxLength(200, { message: 'Email cannot exceed 200 characters' })
   public readonly email!: string;
@@ -82,8 +83,9 @@ export class CreateUserDto {
   @IsNotEmpty({ message: 'Phone number is required!' })
   @IsString({ message: 'Phone number must be a string' })
   @Matches(/^[0-9]{7,14}$/, { 
-    message: 'Phone number must be 7-14 digits without country code' 
+    message: 'Phone number must contain only numeric digits (7-14 digits, no letters or special characters)' 
   })
+  @IsPhoneUnique() // Uses Messages.User.Error.PHONE_NUMBER_ALREADY_EXISTS automatically
   @MaxLength(14, { message: 'Phone number cannot exceed 14 digits' })
   @Transform(({ value }) => value?.trim())
   @Expose({ name: 'phoneNumber' })
@@ -112,6 +114,7 @@ export class CreateUserDto {
   })
   @IsInt({ message: 'Role ID must be an integer' })
   @IsNotEmpty({ message: 'Role ID is required!' })
+  @IsRoleExists() // Uses Messages.Role.Error.IS_ROLE_NOT_FOUND automatically
   public readonly roleId!: number;
 
 }

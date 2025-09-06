@@ -17,6 +17,9 @@ export const ErrorCodes = {
   ACCOUNT_LOCKED: 'A1001', // Account is locked
   INVALID_CREDENTIALS: 'A1002', // Invalid username or password
   TOKEN_EXPIRED: 'A1003', // Authentication token has expired
+  TOKEN_MISSING: 'A1004', // No authentication token provided
+  TOKEN_INVALID: 'A1005', // Invalid token format or signature
+  TOKEN_MALFORMED: 'A1006', // Malformed token structure
 
   /**
    * -------------------------------------------------------------

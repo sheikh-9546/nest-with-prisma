@@ -2,7 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { UserService } from './services/user.service';
 import { UserController } from '@api/modules/users/user.controller';
 import { PrismaModule } from '@api/database/prisma.module';
-import { IsEmailUniqueConstraint } from '@api/core/validators/is-email-unique.validator';
+// Custom validators are now registered globally in AppModule
 import { PrismaService } from '@api/database/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { RolesModule } from '../roles/roles.module';
@@ -24,7 +24,7 @@ import { FileUploadService } from '../common/services/file-upload.service';
     UserService,
     PrismaService,
     JwtService,
-    IsEmailUniqueConstraint,
+    // Services
     UserValidationService,
     RolesService,
     EmailService,

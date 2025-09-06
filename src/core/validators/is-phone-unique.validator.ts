@@ -9,40 +9,56 @@ import {
 } from 'class-validator';
 import { Messages } from '@api/constants/messages';
 
+export interface PhoneValidationArgs {
+  countryCode: string;
+  phoneNumber: string;
+}
+
 @ValidatorConstraint({ async: true })
 @Injectable()
-export class IsEmailUniqueConstraint implements ValidatorConstraintInterface {
+export class IsPhoneUniqueConstraint implements ValidatorConstraintInterface {
   constructor(private readonly prisma: PrismaService) {}
 
-  async validate(email: string, args: ValidationArguments): Promise<boolean> {
-    if (!email) {
+  async validate(phoneNumber: string, args: ValidationArguments): Promise<boolean> {
+    const object = args.object as any;
+    const countryCode = object.countryCode;
+    
+    if (!countryCode || !phoneNumber) {
       return true; // Let other validators handle required validation
     }
 
     try {
       const user = await this.prisma.user.findUnique({
-        where: { email },
+        where: {
+          unique_phone: {
+            countryCode,
+            phoneNumber,
+          },
+        },
       });
+      
       return !user;
     } catch (error) {
-      console.error('Email validation error:', error);
+      console.error('Phone validation error:', error);
       return false; // Fail validation if database error occurs
     }
   }
 
   defaultMessage(args: ValidationArguments): string {
-    return Messages.User.Error.EMAIL_ALREADY_EXISTS(args.value);
+    const object = args.object as any;
+    const fullPhoneNumber = `${object.countryCode}${args.value}`;
+    return Messages.User.Error.PHONE_NUMBER_ALREADY_EXISTS(fullPhoneNumber);
   }
 }
 
-export function IsEmailUnique(validationOptions?: ValidationOptions) {
+export function IsPhoneUnique(validationOptions?: ValidationOptions) {
   return function (object: Object, propertyName: string) {
     registerDecorator({
       target: object.constructor,
       propertyName: propertyName,
       options: validationOptions,
       constraints: [],
-      validator: IsEmailUniqueConstraint,
+      validator: IsPhoneUniqueConstraint,
     });
   };
 }

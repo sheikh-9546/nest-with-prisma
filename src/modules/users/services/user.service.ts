@@ -20,14 +20,13 @@ import { SecurityConstants, DefaultRoles, UserDefaults } from "@api/enums/securi
 import { UserDetailsSerializer } from "../serializers/user.details.serializer";
 import { EmailService } from "@api/modules/mailer/email.service";
 import { Messages } from "@api/constants/messages";
-import { UserValidationService } from "./user.validation.service";
+// UserValidationService no longer needed - validation handled by DTOs
 
 @Injectable()
 export class UserService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly emailService: EmailService,
-    private readonly userValidationService: UserValidationService
+    private readonly emailService: EmailService
   ) {}
 
   // Logger for logging messages
@@ -107,39 +106,13 @@ export class UserService {
     });
   }
 
-  // Method to create a new user after checking if the email is already in use
+  // Method to create a new user (validation handled automatically by DTOs)
   async createUser(
     data: Prisma.UserCreateInput & { roleId: number }
   ): Promise<any> {
     const { email, password, roleId, firstName, lastName, countryCode, phoneNumber } = data;
 
-    // Perform role and email checks in parallel to avoid sequential waits
-    const [roleExists, emailExists, phoneNumberExists] = await Promise.all([
-      this.userValidationService.isRoleChecked(roleId),
-      this.userValidationService.isEmailInUse(email),
-      this.userValidationService.isPhoneInUse(countryCode, phoneNumber),
-    ]);
-
-    //Check if the role exists
-    if (!roleExists) {
-      throw new ConflictException(
-        Messages.Role.Error.IS_ROLE_NOT_FOUND(roleId)
-      );
-    }
-
-    // Check if the email is already in use
-    if (emailExists) {
-      throw new ConflictException(
-        Messages.User.Error.EMAIL_ALREADY_EXISTS(email)
-      );
-    }
-
-    // Check if the phone is already in use
-    if (phoneNumberExists) {
-      throw new ConflictException(
-        Messages.User.Error.PHONE_NUMBER_ALREADY_EXISTS(`${countryCode}${phoneNumber}`)
-      );
-    }
+    // ✅ No manual validation needed - DTOs handle this automatically!
 
     const hashedPassword = await bcrypt.hash(password, SecurityConstants.BCRYPT_SALT_ROUNDS);
     const newUser = await this.prisma.user.create({
