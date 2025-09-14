@@ -7,6 +7,14 @@ import { CustomValidationPipe } from './core/pipes/custom-validation.pipe';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Enable CORS
+  app.enableCors({
+    origin: true, // Allow all origins in development
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    credentials: true,
+  });
+
   // Configure class-validator to use NestJS dependency injection container
   useContainer(app.select(AppModule), { fallbackOnErrors: true });
 
@@ -18,7 +26,7 @@ async function bootstrap() {
     .setTitle('User Module API Documentation')
     .setDescription('User Module API Documentation')
     .setVersion('1.0')
-    .addBearerAuth() 
+    .addBearerAuth()
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
