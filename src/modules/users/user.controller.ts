@@ -41,9 +41,9 @@ export class UserController {
     return this.userService.getAllUsers(page, limit, sort_column, sort_direction);
   }
 
-  @GetMapping({ path: ':id', summary: 'Allow to retrieve user details' })
-  async getUser(@Param('id') id: number): Promise<UserDetailsSerializer> {
-    return this.userService.getUserDetails({ id: id });
+  @GetMapping({ path: ':userId', summary: 'Allow to retrieve user details' })
+  async getUser(@Param('userId') userId: string): Promise<UserDetailsSerializer> {
+    return this.userService.getUserDetails({ userId: userId });
   }
 
   @PostMapping({ path: 'create-user', summary: 'Allow to create a user' })
@@ -52,27 +52,27 @@ export class UserController {
     return this.userService.createUser(data);
   }
 
-  @PatchMapping({ path: ':id', summary: 'Allow to update user details' })
+  @PatchMapping({ path: ':userId', summary: 'Allow to update user details' })
   @Audit({ action: AuditAction.UPDATE, model: 'User' })
   @UseInterceptors(AuditChangesInterceptor)
   async updateUser(
-    @Param('id') id: number,
+    @Param('userId') userId: string,
     @Body() userData: UpdateUserDto,
   ): Promise<User> {
-    return this.userService.updateUser({ where: { id }, data: userData });
+    return this.userService.updateUser({ where: { userId }, data: userData });
   }
 
-  @PatchMapping({ path: ':id/status', summary: 'Allow to update user status' })
+  @PatchMapping({ path: ':userId/status', summary: 'Allow to update user status' })
   @Audit({ action: AuditAction.UPDATE_STATUS, model: 'User' })
   @UseInterceptors(AuditChangesInterceptor)
-  async updateUserStatus(@Param('id') id: number, @Body() updateUserStatusDto: UpdateUserStatusDto) {
-    return this.userService.updateUserStatus(id, updateUserStatusDto.status);
+  async updateUserStatus(@Param('userId') userId: string, @Body() updateUserStatusDto: UpdateUserStatusDto) {
+    return this.userService.updateUserStatusByUuid(userId, updateUserStatusDto.status);
   }
 
-  @DeleteMapping({ path: ':id', summary: 'Delete a user' })
+  @DeleteMapping({ path: ':userId', summary: 'Delete a user' })
   @Audit({ action: AuditAction.DELETE, model: 'User' })
-  async deleteUser(@Param('id') id: number): Promise<User> {
-    return this.userService.deleteUser({ id: id });
+  async deleteUser(@Param('userId') userId: string): Promise<User> {
+    return this.userService.deleteUser({ userId: userId });
   }
 
   @PostMapping({ path: 'change-password', summary: 'Allow to change Password' })

@@ -162,10 +162,18 @@ export class UserService {
     return SerializerUtil.serialize(updateUser, UserSerializer);
   }
 
-  // update user stats
+  // update user status
   async updateUserStatus(userId: number, status: Status) {
     return this.prisma.user.update({
       where: { id: userId },
+      data: { status },
+    });
+  }
+
+  // update user status by UUID
+  async updateUserStatusByUuid(userUuid: string, status: Status) {
+    return this.prisma.user.update({
+      where: { userId: userUuid },
       data: { status },
     });
   }
